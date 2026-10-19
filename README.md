@@ -2,7 +2,7 @@
 
 Aplicación de escritorio (Python + CustomTkinter + SQLite) para controlar inventario, compras y ventas en varias sucursales, con kardex, histórico de precios y trazabilidad de quién vendió.
 
-> **Estado:** Fase 0 (cimientos). Aún no hay módulos de negocio; el avance está en `PROGRESO.md`.
+> **Estado:** Fase 1 (usuarios, roles y permisos). El avance está en `PROGRESO.md`.
 
 ## Requisitos
 
@@ -22,9 +22,14 @@ cp .env.example .env            # En Windows: copy .env.example .env
 
 ```bash
 python main.py --migrar   # crea o actualiza la base de datos
+python seed.py            # crea roles, permisos y el primer administrador
 python main.py --salud    # verifica la base de datos y las migraciones
 python main.py            # abre la aplicación
 ```
+
+## Primer ingreso
+
+`python seed.py` crea los roles (administrador, bodeguero, vendedor, contador), una sucursal y el primer administrador. Toma `ADMIN_CORREO` y `ADMIN_CONTRASENA` del `.env`; si no defines la contraseña, la pide por consola o genera una aleatoria y la muestra una sola vez. Cámbiala después de entrar. Luego abre la aplicación con `python main.py` e inicia sesión.
 
 ## Pruebas
 
