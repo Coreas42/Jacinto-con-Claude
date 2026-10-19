@@ -39,9 +39,9 @@ def main(argumentos: list[str] | None = None) -> int:
         print(json.dumps(salud, ensure_ascii=False, indent=2))
         return 0 if salud["estado"] == "ok" else 1
 
-    from app.ui.ventana_principal import abrir_ventana_principal
+    from app.ui.aplicacion import abrir_aplicacion
 
-    abrir_ventana_principal(motor)
+    abrir_aplicacion(motor)
     return 0
 
 

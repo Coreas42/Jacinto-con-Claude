@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Iterator
 
 from sqlalchemy import Engine, MetaData, create_engine, event
@@ -24,6 +25,11 @@ class Base(DeclarativeBase):
     """Clase base de todos los modelos."""
 
     metadata = MetaData(naming_convention=CONVENCION_NOMBRES)
+
+
+def ahora_utc() -> datetime:
+    """Fecha y hora UTC sin zona (como las guarda la base de datos)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def crear_motor(url: str | None = None) -> Engine:

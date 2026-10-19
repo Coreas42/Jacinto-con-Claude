@@ -1,6 +1,6 @@
 # PROGRESO
 
-**Fase actual:** 0 (Diagnóstico y cimientos) — código entregado, **pruebas pendientes de ejecutar** (ver "Estado de pruebas").
+**Fase actual:** 1 (Usuarios, roles y permisos) — código entregado; pruebas pendientes de correr en GitHub Actions.
 **Fecha:** 2026-10-19
 
 ## Diagnóstico acordado
@@ -14,44 +14,54 @@
 
 ## Supuestos (ajustables)
 
-- Python 3.11+, SQLAlchemy 2 + Alembic. SQLite por defecto; `DATABASE_URL` permite pasar a PostgreSQL sin tocar los modelos.
-- Interfaz en CustomTkinter, pero las reglas de negocio viven en `app/servicios/`, sin depender de la ventana.
-- Costeo: promedio ponderado (cambiable a PEPS en la Fase 3 si se prefiere).
-- Stock negativo bloqueado por defecto.
-- Dinero en `Numeric(12, 2)`/`Decimal`, nunca `float`.
+- Python 3.11+, SQLAlchemy 2 + Alembic. SQLite por defecto; `DATABASE_URL` permite pasar a PostgreSQL.
+- Reglas de negocio en `app/servicios/`, sin depender de la ventana.
+- Costeo: promedio ponderado (cambiable a PEPS en la Fase 3). Stock negativo bloqueado. Dinero en `Decimal`.
 - Multi-sucursal: existencias, movimientos y ventas llevarán `sucursal_id` desde su primera migración.
-- Nombres de tablas, modelos y rutas en español.
+- Contraseñas con argon2, mínimo 8 caracteres.
+- Un usuario no puede cambiar su propio rol, desactivarse ni editar sus propios permisos (evita quedarse sin administrador).
+- El rol "vendedor" ve solo sus propias ventas/reportes: se aplica al consultar datos en las Fases 4 y 5 (el permiso base es `ver`).
 
-## Esquema activo (migración `0001`)
+## Esquema activo (migraciones `0001` y `0002`)
 
-- `sucursales`: id, nombre (único), direccion, activa, creada_en
-- `configuracion`: clave, valor, descripcion
+- `sucursales`, `configuracion`
+- `roles`, `permisos` (módulo + acción, único), `roles_permisos`
+- `usuarios` (correo único, hash argon2, rol, activo, último acceso)
+- `usuarios_permisos` (excepción individual: concedido sí/no sobre el rol)
+- `bitacora_auditoria` (usuario, acción, entidad, detalle JSON, fecha; solo se agregan registros)
 
-## Esquema planificado
+## Permisos por módulo
 
-Ver `modelo-datos` de crearp: usuarios, roles, permisos, bitácora (Fase 1); categorías, productos, historial de precios (Fase 2); proveedores, compras, movimientos_inventario, existencias por sucursal (Fase 3); clientes, ventas, ventas_detalle (Fase 4).
+Catálogo en `app/servicios/permisos.py` (`CATALOGO` y `MATRIZ_BASE`). Toda función de servicio sensible llama a `exigir_permiso`, que lanza `PermisoDenegado` (403). El menú solo muestra módulos con algún permiso efectivo.
+
+Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_cambiado`, `usuario_activado/desactivado`, `permiso_individual_cambiado`, `contrasena_cambiada/restablecida`.
 
 ## Dependencias
 
-SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, pytest 8.3.4 (ver `requirements.txt`).
+SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
 
 ## Estado de pruebas
 
-- Compilación de todo el código (`compileall`): OK.
-- `pytest` (8 pruebas en `tests/test_fase0.py`): **no se pudo ejecutar en la sesión de construcción** porque el entorno bloqueó el acceso a PyPI (403) y no se pudieron instalar las dependencias. Ejecutar `pytest` localmente (ver README) y reportar cualquier fallo para corregirlo en la Fase 1.
+- Fase 0: 8 pruebas pasaron en GitHub Actions (ejecución manual del usuario).
+- Fase 1: `tests/test_fase1.py` y `tests/test_seed.py` escritas; el código compila y los imports internos resuelven. **No se pudieron ejecutar en la sesión de construcción** (PyPI bloqueado). Correr "Run workflow" en GitHub Actions o `pytest` local.
+- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora).
+
+## Nota
+
+Existe `app/servicios/catalogo_permisos.py`, un archivo que no escribí en esta fase (fecha 13:09) y que nada importa; define un catálogo alternativo con la acción `ver_propias`. Se dejó intacto y fuera del .zip. Decidir si se adopta o se borra.
 
 ## Fases planificadas
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 0 | Cimientos: estructura, config, BD, migración inicial, salud | Código entregado, pruebas por ejecutar |
-| 1 | Usuarios, roles, permisos por módulo, login, bitácora | Pendiente |
+| 0 | Cimientos | Validada en GitHub Actions |
+| 1 | Usuarios, roles, permisos por módulo, login, bitácora | Código entregado, pruebas por correr |
 | 2 | Catálogo de productos e historial de precios | Pendiente |
 | 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Pendiente |
 | 4 | Ventas (POS), anulaciones, comprobante | Pendiente |
 | 5 | Histórico y reportes | Pendiente |
-| 6 | Pulido, respaldos, empaquetado (ejecutable), guía de GitHub | Pendiente |
+| 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Fase 1: usuarios, roles y permisos (con pantalla de login en CustomTkinter).
+Fase 2: catálogo de productos (categorías, SKU/código de barras, costo, precio, stock mínimo, historial de cambios de precio).
