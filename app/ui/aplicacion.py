@@ -23,7 +23,7 @@ ROJO = "#d64545"
 VERDE = "#2e9e5b"
 
 # Módulos cuya pantalla llega en una fase posterior.
-FASE_DE_MODULO = {"productos": 2, "inventario": 3, "ventas": 4, "reportes": 5}
+FASE_DE_MODULO = {"inventario": 3, "ventas": 4, "reportes": 5}
 
 
 class Aplicacion(ctk.CTk):
@@ -180,7 +180,11 @@ class PantallaPrincipal(ctk.CTkFrame):
         for nombre, boton in self.botones.items():
             boton.configure(fg_color=("#1f6aa5" if nombre == modulo else "gray40"))
 
-        if modulo == "usuarios":
+        if modulo == "productos":
+            from app.ui.productos_pantalla import PantallaProductos
+
+            PantallaProductos(self.contenido, self.app).pack(fill="both", expand=True)
+        elif modulo == "usuarios":
             from app.ui.usuarios_pantalla import PantallaUsuarios
 
             PantallaUsuarios(self.contenido, self.app).pack(fill="both", expand=True)

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import warnings
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
 from sqlalchemy import Engine, MetaData, create_engine, event
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import cargar_configuracion
+
+# SQLite guarda Numeric como número decimal; con 2 decimales es exacto para dinero,
+# así que se silencia el aviso informativo de SQLAlchemy.
+warnings.filterwarnings("ignore", message=r".*does \*not\* support Decimal objects natively.*", category=SAWarning)
 
 # Convención de nombres para que Alembic genere restricciones estables.
 CONVENCION_NOMBRES = {

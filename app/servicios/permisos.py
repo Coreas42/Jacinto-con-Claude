@@ -16,7 +16,8 @@ from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
 # módulo -> acciones posibles
 CATALOGO: dict[str, list[str]] = {
     "usuarios": ["ver", "crear", "editar"],
-    "productos": ["ver", "crear", "editar"],
+    # "precios": cambiar precio o costo (más sensible que editar nombre o stock mínimo)
+    "productos": ["ver", "crear", "editar", "precios"],
     "inventario": ["ver", "crear", "editar", "anular", "exportar"],
     "ventas": ["ver", "crear", "anular"],
     "reportes": ["ver", "exportar"],
