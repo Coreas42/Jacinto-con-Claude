@@ -50,10 +50,18 @@ def crear_motor(url: str | None = None) -> Engine:
     if motor.dialect.name == "sqlite":
 
         @event.listens_for(motor, "connect")
-        def _activar_llaves_foraneas(conexion, _registro):  # pragma: no cover
+        def _preparar_conexion(conexion, _registro):  # pragma: no cover
+            # pysqlite no emite BEGIN por su cuenta de forma fiable: se desactiva y se
+            # emite a mano (receta oficial de SQLAlchemy). Así los SAVEPOINT y los
+            # rollback parciales de los servicios funcionan correctamente.
+            conexion.isolation_level = None
             cursor = conexion.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+
+        @event.listens_for(motor, "begin")
+        def _comenzar_transaccion(conexion):  # pragma: no cover
+            conexion.exec_driver_sql("BEGIN")
 
     return motor
 
