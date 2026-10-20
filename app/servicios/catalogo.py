@@ -68,6 +68,11 @@ def _dinero(valor: Any, campo: str) -> Decimal:
     return numero
 
 
+def a_dinero(valor: Any, campo: str) -> Decimal:
+    """Versión pública de la conversión de dinero (la usan otros servicios)."""
+    return _dinero(valor, campo)
+
+
 def _entero(valor: Any, campo: str) -> int:
     try:
         numero = int(str(valor).strip() or 0)
@@ -337,6 +342,23 @@ def editar_producto(sesion: Session, actor: Usuario, producto_id: int, cambios: 
         detalle={campo: [_mostrar(campo, a), _mostrar(campo, n)] for campo, (a, n) in diferencias.items()},
     )
     return sorted(diferencias)
+
+
+def actualizar_costo_promedio(
+    sesion: Session, producto: Producto, nuevo_costo: Decimal, usuario_id: int
+) -> bool:
+    """Fija el costo promedio calculado por una compra y lo deja en el historial.
+
+    No exige ``productos.precios``: el costo se deriva de la compra, que ya fue
+    autorizada por el permiso de inventario. Devuelve ``True`` si cambió.
+    """
+    if producto.costo_promedio == nuevo_costo:
+        return False
+    anterior = producto.costo_promedio
+    producto.costo_promedio = nuevo_costo
+    sesion.flush()
+    _historial(sesion, producto.id, "costo", anterior, nuevo_costo, usuario_id)
+    return True
 
 
 def establecer_activo(sesion: Session, actor: Usuario, producto_id: int, activo: bool) -> None:

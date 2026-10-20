@@ -24,8 +24,9 @@ from sqlalchemy.orm import Session
 
 from app.db import crear_fabrica_sesiones, crear_motor, sesion_transaccional
 from app.migraciones import migrar_a_ultima
-from app.modelos import Categoria, Producto, Sucursal, Usuario
+from app.modelos import Categoria, Compra, Producto, Proveedor, Sucursal, Usuario
 from app.servicios.catalogo import crear_categoria, crear_producto
+from app.servicios.inventario import crear_proveedor, registrar_compra
 from app.servicios.permisos import sembrar_permisos_y_roles
 from app.servicios.usuarios import crear_administrador_inicial
 
@@ -69,6 +70,38 @@ def sembrar_catalogo_ejemplo(sesion: Session, actor: Usuario) -> int:
     return len(PRODUCTOS_EJEMPLO)
 
 
+# Existencias iniciales de ejemplo. SNK-002 queda por debajo de su mínimo (20) para mostrar la alerta.
+STOCK_INICIAL_EJEMPLO = {
+    "BEB-001": 60, "BEB-002": 48, "BEB-003": 24, "SNK-001": 40, "SNK-002": 15,
+    "LIM-001": 12, "LIM-002": 30, "PAP-001": 20, "PAP-002": 100,
+}
+
+
+def sembrar_inventario_ejemplo(sesion: Session, actor: Usuario) -> bool:
+    """Registra una compra inicial con stock de ejemplo, solo si aún no hay compras."""
+    if sesion.scalar(select(Compra.id).limit(1)) is not None:
+        return False
+    sucursal = sesion.scalar(select(Sucursal).order_by(Sucursal.id))
+    productos = list(sesion.scalars(select(Producto).where(Producto.sku.in_(STOCK_INICIAL_EJEMPLO))))
+    if sucursal is None or not productos:
+        return False
+    proveedor = sesion.scalar(select(Proveedor).where(Proveedor.nombre == "Distribuidora Central"))
+    if proveedor is None:
+        proveedor = crear_proveedor(sesion, actor, "Distribuidora Central", "Proveedor de ejemplo")
+    registrar_compra(
+        sesion,
+        actor,
+        sucursal_id=sucursal.id,
+        proveedor_id=proveedor.id,
+        lineas=[
+            {"producto_id": p.id, "cantidad": STOCK_INICIAL_EJEMPLO[p.sku], "costo_unitario": p.costo_promedio}
+            for p in productos
+        ],
+        nota="Stock inicial de ejemplo",
+    )
+    return True
+
+
 def sembrar(sesion: Session, nombre: str, correo: str, clave: str) -> Usuario | None:
     """Siembra lo básico. Devuelve el administrador creado, o ``None`` si ya existía."""
     sembrar_permisos_y_roles(sesion)
@@ -82,6 +115,7 @@ def sembrar(sesion: Session, nombre: str, correo: str, clave: str) -> Usuario | 
     if admin is None:
         admin = creado = crear_administrador_inicial(sesion, nombre, correo, clave)
     sembrar_catalogo_ejemplo(sesion, admin)
+    sembrar_inventario_ejemplo(sesion, admin)
     return creado
 
 
