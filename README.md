@@ -2,7 +2,7 @@
 
 Aplicación de escritorio (Python + CustomTkinter + SQLite) para controlar inventario, compras y ventas en varias sucursales, con kardex, histórico de precios y trazabilidad de quién vendió.
 
-> **Estado:** Fase 3 (inventario y kardex). El avance está en `PROGRESO.md`.
+> **Estado:** Fase 4 (ventas y caja). El avance está en `PROGRESO.md`.
 
 ## Requisitos
 

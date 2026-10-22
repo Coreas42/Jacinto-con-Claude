@@ -23,7 +23,7 @@ ROJO = "#d64545"
 VERDE = "#2e9e5b"
 
 # Módulos cuya pantalla llega en una fase posterior.
-FASE_DE_MODULO = {"ventas": 4, "reportes": 5}
+FASE_DE_MODULO = {"reportes": 5}
 
 
 class Aplicacion(ctk.CTk):
@@ -188,6 +188,10 @@ class PantallaPrincipal(ctk.CTkFrame):
             from app.ui.inventario_pantalla import PantallaInventario
 
             PantallaInventario(self.contenido, self.app).pack(fill="both", expand=True)
+        elif modulo == "ventas":
+            from app.ui.ventas_pantalla import PantallaVentas
+
+            PantallaVentas(self.contenido, self.app).pack(fill="both", expand=True)
         elif modulo == "usuarios":
             from app.ui.usuarios_pantalla import PantallaUsuarios
 

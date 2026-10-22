@@ -20,9 +20,9 @@
 - Multi-sucursal: existencias, movimientos y ventas llevarán `sucursal_id` desde su primera migración.
 - Contraseñas con argon2, mínimo 8 caracteres.
 - Un usuario no puede cambiar su propio rol, desactivarse ni editar sus propios permisos (evita quedarse sin administrador).
-- El rol "vendedor" ve solo sus propias ventas/reportes: se aplica al consultar datos en las Fases 4 y 5 (el permiso base es `ver`).
+- Ventas: `ventas.ver` = solo las propias; `ventas.ver_todas` = las de todos los vendedores (contador y administrador). Reportes (Fase 5) seguirán la misma idea.
 
-## Esquema activo (migraciones `0001` a `0004`)
+## Esquema activo (migraciones `0001` a `0005`)
 
 - `sucursales`, `configuracion`
 - `roles`, `permisos` (módulo + acción, único), `roles_permisos`
@@ -36,6 +36,8 @@
 - `existencias` (producto + sucursal, cantidad; `CHECK cantidad >= 0`)
 - `movimientos_inventario` (kardex: producto, sucursal, tipo, cantidad con signo, saldo_despues, costo_unitario, motivo, referencia, usuario, fecha; índice por producto; solo se agregan filas)
 - `compras` + `compras_detalle`, `traslados`
+- `clientes` (nombre, teléfono, correo, activo)
+- `ventas` (número único, sucursal, vendedor, cliente, método de pago, subtotal, descuento, total, estado, nota, fecha; anulación: usuario, fecha, motivo) y `ventas_detalle` (cantidad, **precio y costo congelados**, descuento de línea)
 
 ## Permisos por módulo
 
@@ -67,6 +69,17 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Pendientes conscientes: no hay anulación de compras (se corrige con un ajuste); no hay stock negativo diferido; los usuarios no están limitados a una sucursal (cualquiera con permiso opera cualquier sucursal activa).
 - `seed.py` registra una compra inicial de ejemplo (9 productos en la sucursal Principal; SNK-002 queda en alerta) solo si no hay compras.
 
+## Ventas (Fase 4)
+
+- `registrar_venta` valida todo primero y luego, dentro de un savepoint, asigna número consecutivo (`V-000001`), descuenta stock con `aplicar_movimiento` (tipo `salida`) y guarda la venta: o queda todo o nada. El vendedor es siempre el usuario de la sesión; el precio y el costo salen del producto y se congelan en el detalle (cambiar el precio después no altera ventas hechas). Descuentos son montos en dinero (por línea y general), nunca mayores al importe.
+- `anular_venta` (permiso `ventas.anular`, motivo obligatorio): marca la venta, devuelve el stock con movimientos `anulacion` al costo original y guarda quién, cuándo y por qué. No se anula dos veces.
+- Comprobante (`servicios/comprobante.py`): texto de 44 columnas y HTML escapado; el botón «Imprimir» lo abre en el navegador para imprimir con Ctrl+P.
+- Pantalla de caja: lector de código de barras (envía el código + Enter), búsqueda por nombre/SKU, carrito, cliente, forma de pago, descuento; pestaña Historial con anulación.
+- Actualizar una instalación existente: `sembrar_permisos_y_roles` (lo ejecuta `seed.py`) crea `ventas.ver_todas` y se lo da al contador sin quitar personalizaciones. Para que el administrador lo reciba basta con correr `python seed.py` tras migrar.
+- Eventos auditados nuevos: `cliente_creado`, `venta_registrada`, `venta_anulada`.
+- Pendientes conscientes: no hay devoluciones parciales (se anula la venta completa y se vuelve a vender); no hay pagos mixtos ni cálculo de cambio; el número de venta es global (no por sucursal). En SQLite, dos cajas en el mismo archivo pueden recibir «database is locked» bajo carga; el stock nunca se sobrevende. Para varias cajas reales conviene PostgreSQL (`DATABASE_URL`).
+- Se descartó (sin poder probarlo) usar `BEGIN IMMEDIATE` en SQLite: bloquearía a cualquier sesión abierta, incluso solo de lectura.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -76,7 +89,8 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fases 0 y 1: pasaron en GitHub Actions. Fase 2 unida a `main` (PR #2).
 - Fase 3: `tests/test_fase3.py` escrita (unas 35 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción** (PyPI bloqueado). Correr "Run workflow" en Actions sobre la rama `fase-3-inventario-kardex`.
 - Riesgo a vigilar en esa corrida: el cambio de `crear_motor` (BEGIN explícito en SQLite) toca también las migraciones y las pruebas anteriores.
-- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora, productos, inventario).
+- Fase 4: `tests/test_fase4.py` escrita (unas 40 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-4-ventas`.
+- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora, productos, inventario, caja y historial de ventas).
 
 ## Nota
 
@@ -89,11 +103,11 @@ Existen archivos que no escribí y que nada importa: `app/servicios/catalogo_per
 | 0 | Cimientos | Validada en GitHub Actions |
 | 1 | Usuarios, roles, permisos por módulo, login, bitácora | Validada y unida a `main` |
 | 2 | Catálogo de productos e historial de precios | Unida a `main` (PR #2) |
-| 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Código subido a rama, pruebas por correr |
-| 4 | Ventas (POS), anulaciones, comprobante | Pendiente |
+| 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Unida a `main` (PR #3) |
+| 4 | Ventas (POS), anulaciones, comprobante | Código subido a rama, pruebas por correr |
 | 5 | Histórico y reportes | Pendiente |
 | 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Fase 4: ventas (POS): venta con líneas, precio y costo congelados, descuento, método de pago, vendedor tomado de la sesión, búsqueda por código de barras (`obtener_por_codigo`), descuento de stock atómico con `aplicar_movimiento`, anulación con motivo que revierte stock (tipo `anulacion`) y comprobante imprimible.
+Fase 5: histórico y reportes: ventas por vendedor, producto, categoría y fecha; utilidad bruta (precio − costo congelados); inventario valorizado; kardex por producto; exportaciones CSV. Respetar `ventas.ver_todas` y los permisos de `reportes`.

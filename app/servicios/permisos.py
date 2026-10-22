@@ -19,7 +19,8 @@ CATALOGO: dict[str, list[str]] = {
     # "precios": cambiar precio o costo (más sensible que editar nombre o stock mínimo)
     "productos": ["ver", "crear", "editar", "precios"],
     "inventario": ["ver", "crear", "editar", "anular", "exportar"],
-    "ventas": ["ver", "crear", "anular"],
+    # "ver" = solo las ventas propias; "ver_todas" = las de todos los vendedores.
+    "ventas": ["ver", "ver_todas", "crear", "anular"],
     "reportes": ["ver", "exportar"],
     "bitacora": ["ver"],
 }
@@ -59,7 +60,7 @@ MATRIZ_BASE: dict[str, dict[str, list[str]]] = {
     "contador": {
         "productos": ["ver"],
         "inventario": ["ver"],
-        "ventas": ["ver"],
+        "ventas": ["ver", "ver_todas"],
         "reportes": ["ver", "exportar"],
         "bitacora": ["ver"],
     },
@@ -70,15 +71,18 @@ def sembrar_permisos_y_roles(sesion: Session) -> None:
     """Crea los permisos y roles base. Se puede ejecutar varias veces sin duplicar.
 
     Los roles ya existentes conservan los cambios hechos por el administrador;
-    solo el rol ``administrador`` se sincroniza para recibir permisos nuevos.
+    solo reciben los permisos que aparecen por primera vez (según la matriz base) y
+    el rol ``administrador`` se sincroniza con todo el catálogo.
     """
     existentes = {(p.modulo, p.accion): p for p in sesion.scalars(select(Permiso))}
+    nuevos: set[tuple[str, str]] = set()
     for modulo, acciones in CATALOGO.items():
         for accion in acciones:
             if (modulo, accion) not in existentes:
                 permiso = Permiso(modulo=modulo, accion=accion)
                 sesion.add(permiso)
                 existentes[(modulo, accion)] = permiso
+                nuevos.add((modulo, accion))
     sesion.flush()
 
     roles = {r.nombre: r for r in sesion.scalars(select(Rol))}
@@ -94,6 +98,15 @@ def sembrar_permisos_y_roles(sesion: Session) -> None:
             sesion.add(rol)
         elif nombre == "administrador":
             rol.permisos = list(existentes.values())
+        elif nuevos:
+            # Actualización de una instalación existente: los permisos que aparecen por
+            # primera vez se agregan a los roles según la matriz base, sin quitar nada
+            # de lo que el administrador haya personalizado.
+            actuales = {(p.modulo, p.accion) for p in rol.permisos}
+            for modulo, acciones in matriz.items():
+                for accion in acciones:
+                    if (modulo, accion) in nuevos and (modulo, accion) not in actuales:
+                        rol.permisos.append(existentes[(modulo, accion)])
     sesion.flush()
 
 
