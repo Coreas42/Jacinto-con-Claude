@@ -21,3 +21,4 @@ from app.modelos.seguridad import (  # noqa: F401
     UsuarioPermiso,
     roles_permisos,
 )
+from app.modelos.ventas import Cliente, Venta, VentaDetalle  # noqa: E402,F401

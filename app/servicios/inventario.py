@@ -642,3 +642,14 @@ def exportar_kardex_csv(
             for m in movimientos
         ],
     )
+
+
+# ---- versiones públicas de utilidades internas (las usan otros servicios) -------------
+
+
+def obtener_sucursal_activa(sesion: Session, sucursal_id: int) -> Sucursal:
+    return _sucursal(sesion, sucursal_id)
+
+
+def cantidad_entera(valor: Any, campo: str, minimo: int = 1) -> int:
+    return _cantidad(valor, campo, minimo)
