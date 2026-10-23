@@ -168,6 +168,7 @@ def _a_dict(producto: Producto) -> dict:
         "precio": producto.precio,
         "stock_minimo": producto.stock_minimo,
         "activo": producto.activo,
+        "es_servicio": producto.es_servicio,
     }
 
 
@@ -233,7 +234,9 @@ def crear_producto(
     codigo_barras: str | None = None,
     descripcion: str | None = None,
     marca: str | None = None,
+    es_servicio: bool = False,
 ) -> Producto:
+    """Crea un producto. Un servicio no maneja existencias: su stock mínimo es siempre 0."""
     exigir_permiso(sesion, actor, "productos", "crear")
     sku = (_texto(sku, "SKU", 50, obligatorio=True) or "").upper()
     nombre = _texto(nombre, "nombre", 150, obligatorio=True)
@@ -242,7 +245,8 @@ def crear_producto(
     marca = _texto(marca, "marca", 80)
     precio = _dinero(precio, "precio")
     costo = _dinero(costo, "costo")
-    minimo = _entero(stock_minimo, "stock mínimo")
+    es_servicio = bool(es_servicio)
+    minimo = 0 if es_servicio else _entero(stock_minimo, "stock mínimo")
 
     categoria = _obtener_categoria(sesion, categoria_id)
     if not categoria.activa:
@@ -259,6 +263,7 @@ def crear_producto(
         costo_promedio=costo,
         precio=precio,
         stock_minimo=minimo,
+        es_servicio=es_servicio,
     )
     sesion.add(producto)
     sesion.flush()
@@ -271,7 +276,7 @@ def crear_producto(
         usuario_id=actor.id,
         entidad="productos",
         entidad_id=producto.id,
-        detalle={"sku": sku, "nombre": nombre},
+        detalle={"sku": sku, "nombre": nombre, "servicio": es_servicio},
     )
     return producto
 
@@ -303,6 +308,8 @@ def editar_producto(sesion: Session, actor: Usuario, producto_id: int, cambios: 
         nuevos["codigo_barras"] = _texto(cambios["codigo_barras"], "código de barras", 50)
     if "stock_minimo" in cambios:
         nuevos["stock_minimo"] = _entero(cambios["stock_minimo"], "stock mínimo")
+        if producto.es_servicio and nuevos["stock_minimo"] != 0:
+            raise ErrorDeNegocio("Un servicio no maneja existencias: su stock mínimo es siempre 0.")
     if "precio" in cambios:
         nuevos["precio"] = _dinero(cambios["precio"], "precio")
     if "costo" in cambios:

@@ -22,7 +22,7 @@
 - Un usuario no puede cambiar su propio rol, desactivarse ni editar sus propios permisos (evita quedarse sin administrador).
 - Ventas: `ventas.ver` = solo las propias; `ventas.ver_todas` = las de todos los vendedores (contador y administrador). Reportes (Fase 5) seguirán la misma idea.
 
-## Esquema activo (migraciones `0001` a `0006`)
+## Esquema activo (migraciones `0001` a `0007`)
 
 - `sucursales`, `configuracion`
 - `roles`, `permisos` (módulo + acción, único), `roles_permisos`
@@ -38,6 +38,7 @@
 - `compras` + `compras_detalle`, `traslados`
 - `clientes` (nombre, teléfono, correo, activo)
 - `ventas` (número único, sucursal, vendedor, cliente, método de pago, subtotal, descuento, total, estado, nota, fecha; anulación: usuario, fecha, motivo) y `ventas_detalle` (cantidad, **precio y costo congelados**, descuento de línea)
+- `productos.es_servicio` (booleano, por defecto falso)
 - `gastos` (fecha, categoría, descripción, monto > 0, sucursal opcional, usuario, estado activo/anulado, quién/cuándo/por qué se anuló)
 
 ## Permisos por módulo
@@ -101,7 +102,16 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - **Clientes**: editar (permiso `ventas.crear`) y desactivar/reactivar (`ventas.anular`); un cliente desactivado no se puede usar en ventas nuevas. **Proveedores**: editar con `inventario.editar` (nombre único).
 - Eventos auditados nuevos: `gasto_registrado`, `gasto_anulado`, `cliente_editado`, `cliente_activado/desactivado`, `proveedor_editado`.
 - Actualizar una instalación existente: `python main.py --migrar` y luego `python seed.py` (crea los permisos de `gastos` y se los da al contador sin quitar personalizaciones).
-- Pendiente consciente: no se incluyen fotos de producto, servicios sin stock (polarizado, instalación) ni la pantalla de configuración de la imagen original; son candidatos para una fase posterior. Los iconos son emoji (en Linux requieren una fuente de emoji instalada).
+- Pendiente consciente: no se incluyen fotos de producto ni la pantalla de configuración de la imagen original; son candidatos para una fase posterior. Los iconos son emoji (en Linux requieren una fuente de emoji instalada).
+
+## Servicios sin stock (Fase 6a)
+
+- Un producto puede ser **servicio** (polarizado, instalación, car wash): se marca al crearlo y no se puede cambiar después. Su stock mínimo es siempre 0.
+- `aplicar_movimiento` rechaza cualquier movimiento de un servicio (compras, mermas, ajustes, traslados). `existencias`, alertas de stock bajo e inventario valorizado lo excluyen.
+- `registrar_venta` vende servicios sin descontar nada y congela precio y costo como siempre (el costo del servicio es lo que se anotó en «Costo»: materiales, comisión...). `anular_venta` no devuelve stock de servicios. Los reportes de ventas y utilidad lo incluyen normalmente.
+- La caja muestra «servicio» en lugar de stock; la pantalla de productos tiene el interruptor «Es un servicio».
+- Una venta con servicio y producto sigue siendo todo o nada.
+- Actualizar una instalación existente: `python main.py --migrar` (migración 0007; los productos existentes quedan como productos normales).
 
 ## Dependencias
 
@@ -117,6 +127,8 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 5: `tests/test_fase5.py` escrita (unas 25 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-reportes`.
 - Fase 5: unida a `main` (PR #5), pruebas en verde.
 - Fase 5.5 (interfaz): `tests/test_fase55.py` escrita (unas 45 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-5-interfaz`.
+- Fase 5.5: unida a `main` (PR #6), pruebas en verde.
+- Fase 6a (servicios): `tests/test_fase6a.py` escrita (9 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6a-servicios`.
 - Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, encabezado y reloj, menú, inicio, usuarios, permisos, bitácora, productos, inventario, clientes, proveedores, gastos, caja, historial de ventas y reportes).
 
 ## Fases planificadas
@@ -129,11 +141,12 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 | 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Unida a `main` (PR #3) |
 | 4 | Ventas (POS), anulaciones, comprobante | Unida a `main` (PR #4) |
 | 5 | Histórico y reportes | Unida a `main` (PR #5) |
-| 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Código subido a rama, pruebas por correr |
+| 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Unida a `main` (PR #6) |
+| 6a | Servicios sin stock (polarizado, instalación, car wash) | Código subido a rama, pruebas por correr |
 | 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Revisar a mano la interfaz (tema, inicio, menú, clientes, proveedores, gastos) y pedir ajustes visuales. Candidatos: servicios sin stock (polarizado, instalación, car wash), fotos de producto, pantalla de configuración, caja con más atajos.
+Revisar a mano la interfaz y pedir ajustes visuales. Candidatos: fotos de producto, pantalla de configuración, caja con más atajos.
 
 Después, Fase 6: validaciones, paginación, respaldos, Dockerfile, README completo, guía de GitHub, revisión de seguridad (incluida la visibilidad de costos en inventario para el vendedor) y `verificar_consistencia` en `--salud`.

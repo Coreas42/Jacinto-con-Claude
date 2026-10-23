@@ -135,7 +135,9 @@ def _producto_vendible(sesion: Session, producto: Producto, sucursal_id: int) ->
         "sku": producto.sku,
         "nombre": producto.nombre,
         "precio": producto.precio,
-        "stock": stock_actual(sesion, producto.id, sucursal_id),
+        "es_servicio": producto.es_servicio,
+        # Un servicio no tiene existencias: ``None`` significa "sin control de stock".
+        "stock": None if producto.es_servicio else stock_actual(sesion, producto.id, sucursal_id),
     }
 
 
@@ -261,21 +263,22 @@ def registrar_venta(
                 sesion.flush()
                 for producto, cantidad, descuento_linea, precio in validadas:
                     costo = producto.costo_promedio
-                    try:
-                        aplicar_movimiento(
-                            sesion,
-                            usuario_id=actor.id,
-                            producto_id=producto.id,
-                            sucursal_id=sucursal_id,
-                            tipo="salida",
-                            cantidad=cantidad,
-                            costo_unitario=costo,
-                            motivo=f"Venta {formatear_numero(venta.numero)}",
-                            referencia_tipo="venta",
-                            referencia_id=venta.id,
-                        )
-                    except ErrorDeNegocio as error:
-                        raise ErrorDeNegocio(f"{producto.sku} · {producto.nombre}: {error}") from None
+                    if not producto.es_servicio:  # un servicio no descuenta existencias
+                        try:
+                            aplicar_movimiento(
+                                sesion,
+                                usuario_id=actor.id,
+                                producto_id=producto.id,
+                                sucursal_id=sucursal_id,
+                                tipo="salida",
+                                cantidad=cantidad,
+                                costo_unitario=costo,
+                                motivo=f"Venta {formatear_numero(venta.numero)}",
+                                referencia_tipo="venta",
+                                referencia_id=venta.id,
+                            )
+                        except ErrorDeNegocio as error:
+                            raise ErrorDeNegocio(f"{producto.sku} · {producto.nombre}: {error}") from None
                     sesion.add(
                         VentaDetalle(
                             venta_id=venta.id,
@@ -320,6 +323,9 @@ def anular_venta(sesion: Session, actor: Usuario, venta_id: int, motivo: str) ->
             select(VentaDetalle).where(VentaDetalle.venta_id == venta.id).order_by(VentaDetalle.id)
         ).all()
         for detalle in detalles:
+            producto = sesion.get(Producto, detalle.producto_id)
+            if producto is not None and producto.es_servicio:
+                continue  # los servicios no movieron existencias, no hay nada que devolver
             aplicar_movimiento(
                 sesion,
                 usuario_id=actor.id,
