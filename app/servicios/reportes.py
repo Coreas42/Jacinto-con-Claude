@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.modelos import Categoria, Producto, Sucursal, Usuario, Venta, VentaDetalle
 from app.servicios.auditoria import registrar
-from app.servicios.errores import ErrorDeNegocio
+from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
 from app.servicios.inventario import existencias
 from app.servicios.permisos import exigir_permiso
 from app.servicios.ventas import _ve_todas, formatear_numero
@@ -223,6 +223,33 @@ def ventas_agrupadas(
     else:
         filas.sort(key=lambda f: (-f["ingreso"], f["clave"]))
     return filas[:limite] if limite else filas
+
+
+def resultado_del_periodo(
+    sesion: Session, actor: Usuario, desde: date | None = None, hasta: date | None = None,
+    sucursal_id: int | None = None,
+) -> dict:
+    """Utilidad bruta menos gastos = utilidad neta, por días del calendario local.
+
+    Exige poder ver costos (``ventas.ver_todas``) y ``gastos.ver``. Al filtrar por sucursal
+    solo entran los gastos asignados a ella (los gastos generales quedan fuera).
+    """
+    from app.servicios.gastos import total_gastos
+
+    inicio, fin = rango_local(desde, hasta)
+    resumen = resumen_ventas(sesion, actor, inicio, fin, sucursal_id)
+    if resumen["utilidad"] is None:
+        raise PermisoDenegado("ventas", "ver_todas")
+    gastos = total_gastos(sesion, actor, desde, hasta, sucursal_id=sucursal_id)
+    neta = resumen["utilidad"] - gastos
+    return {
+        "ingreso": resumen["ingreso"],
+        "costo": resumen["costo"],
+        "utilidad_bruta": resumen["utilidad"],
+        "gastos": gastos,
+        "utilidad_neta": neta,
+        "margen_neto": _margen(neta, resumen["ingreso"]),
+    }
 
 
 # ---- inventario valorizado -----------------------------------------------------------

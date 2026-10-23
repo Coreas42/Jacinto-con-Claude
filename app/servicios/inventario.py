@@ -256,6 +256,28 @@ def listar_proveedores(sesion: Session, actor: Usuario, incluir_inactivos: bool 
     ]
 
 
+def editar_proveedor(
+    sesion: Session, actor: Usuario, proveedor_id: int, nombre: str, contacto: str | None = None
+) -> Proveedor:
+    exigir_permiso(sesion, actor, "inventario", "editar")
+    proveedor = sesion.get(Proveedor, proveedor_id)
+    if proveedor is None:
+        raise ErrorDeNegocio("El proveedor no existe.")
+    nombre = _texto(nombre, "nombre", 120, obligatorio=True)
+    otro = sesion.scalar(
+        select(Proveedor.id).where(Proveedor.nombre.ilike(nombre), Proveedor.id != proveedor_id)
+    )
+    if otro is not None:
+        raise ErrorDeNegocio(f"Ya existe el proveedor '{nombre}'.")
+    proveedor.nombre = nombre
+    proveedor.contacto = _texto(contacto, "contacto", 200)
+    registrar(
+        sesion, "proveedor_editado", usuario_id=actor.id, entidad="proveedores", entidad_id=proveedor.id,
+        detalle={"nombre": nombre},
+    )
+    return proveedor
+
+
 def establecer_proveedor_activo(sesion: Session, actor: Usuario, proveedor_id: int, activo: bool) -> None:
     exigir_permiso(sesion, actor, "inventario", "editar")
     proveedor = sesion.get(Proveedor, proveedor_id)

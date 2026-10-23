@@ -2,7 +2,7 @@
 
 Aplicación de escritorio (Python + CustomTkinter + SQLite) para controlar inventario, compras y ventas en varias sucursales, con kardex, histórico de precios y trazabilidad de quién vendió.
 
-> **Estado:** Fase 5 (reportes). El avance está en `PROGRESO.md`.
+> **Estado:** Fase 5.5 (interfaz, gastos, clientes y proveedores). El avance está en `PROGRESO.md`.
 
 ## Requisitos
 
@@ -26,6 +26,10 @@ python seed.py            # crea roles, permisos y el primer administrador
 python main.py --salud    # verifica la base de datos y las migraciones
 python main.py            # abre la aplicación
 ```
+
+## Personalizar el aspecto
+
+En `.env` define `NOMBRE_EMPRESA` y, si quieres, `ESLOGAN_EMPRESA`. Para mostrar tu logo, guarda el archivo como `assets/logo.png` (alto recomendado: 120 px o más). Si no existe, solo se muestra el nombre.
 
 ## Primer ingreso
 

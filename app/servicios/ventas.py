@@ -74,13 +74,56 @@ def crear_cliente(
     return cliente
 
 
-def listar_clientes(sesion: Session, actor: Usuario) -> list[dict]:
+def listar_clientes(
+    sesion: Session, actor: Usuario, texto: str = "", incluir_inactivos: bool = False
+) -> list[dict]:
     exigir_permiso(sesion, actor, "ventas", "ver")
-    consulta = select(Cliente).where(Cliente.activo.is_(True)).order_by(Cliente.nombre)
+    consulta = select(Cliente).order_by(Cliente.nombre)
+    if not incluir_inactivos:
+        consulta = consulta.where(Cliente.activo.is_(True))
+    texto = (texto or "").strip()
+    if texto:
+        patron = f"%{texto}%"
+        consulta = consulta.where(
+            or_(Cliente.nombre.ilike(patron), Cliente.telefono.ilike(patron), Cliente.correo.ilike(patron))
+        )
     return [
-        {"id": c.id, "nombre": c.nombre, "telefono": c.telefono, "correo": c.correo}
+        {"id": c.id, "nombre": c.nombre, "telefono": c.telefono, "correo": c.correo, "activo": c.activo}
         for c in sesion.scalars(consulta)
     ]
+
+
+def editar_cliente(
+    sesion: Session, actor: Usuario, cliente_id: int, nombre: str, telefono: str | None = None,
+    correo: str | None = None,
+) -> Cliente:
+    exigir_permiso(sesion, actor, "ventas", "crear")
+    cliente = sesion.get(Cliente, cliente_id)
+    if cliente is None:
+        raise ErrorDeNegocio("El cliente no existe.")
+    cliente.nombre = _texto(nombre, "nombre", 120, obligatorio=True)
+    cliente.telefono = _texto(telefono, "teléfono", 30)
+    cliente.correo = _texto(correo, "correo", 150)
+    registrar(
+        sesion, "cliente_editado", usuario_id=actor.id, entidad="clientes", entidad_id=cliente.id,
+        detalle={"nombre": cliente.nombre},
+    )
+    return cliente
+
+
+def establecer_cliente_activo(sesion: Session, actor: Usuario, cliente_id: int, activo: bool) -> None:
+    """Desactiva (o reactiva) un cliente; sus ventas anteriores se conservan."""
+    exigir_permiso(sesion, actor, "ventas", "anular")
+    cliente = sesion.get(Cliente, cliente_id)
+    if cliente is None:
+        raise ErrorDeNegocio("El cliente no existe.")
+    if cliente.activo == activo:
+        return
+    cliente.activo = activo
+    registrar(
+        sesion, "cliente_activado" if activo else "cliente_desactivado",
+        usuario_id=actor.id, entidad="clientes", entidad_id=cliente.id,
+    )
 
 
 # ---- búsqueda de productos para vender -----------------------------------------------
