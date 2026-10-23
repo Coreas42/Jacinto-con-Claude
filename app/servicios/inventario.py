@@ -184,6 +184,8 @@ def aplicar_movimiento(
     delta = cantidad * signo if signo != 0 else cantidad
 
     producto = _producto(sesion, producto_id)
+    if producto.es_servicio:
+        raise ErrorDeNegocio(f"{producto.sku} es un servicio y no maneja inventario.")
     _sucursal(sesion, sucursal_id)
     saldo = _aplicar_delta(sesion, producto_id, sucursal_id, delta)
 
@@ -475,6 +477,7 @@ def _consultar_existencias(
         select(Producto, stock)
         .outerjoin(suma, suma.c.producto_id == Producto.id)
         .options(joinedload(Producto.categoria))
+        .where(Producto.es_servicio.is_(False))  # los servicios no tienen existencias
         .order_by(Producto.nombre)
     )
     texto = (texto or "").strip()

@@ -170,7 +170,8 @@ class PantallaVentas(ctk.CTkFrame):
         for p in encontrados:
             ctk.CTkButton(
                 self.resultados,
-                text=f"{p['sku']} · {p['nombre']} · {p['precio']:,.2f} · stock {p['stock']}",
+                text=f"{p['sku']} · {p['nombre']} · {p['precio']:,.2f} · "
+                f"{'servicio' if p['stock'] is None else 'stock ' + str(p['stock'])}",
                 anchor="w",
                 fg_color="gray30",
                 command=lambda x=p: self._elegir(x),
@@ -192,7 +193,7 @@ class PantallaVentas(ctk.CTkFrame):
         else:
             self.carrito.append({**producto, "cantidad": 1})
         linea = next(x for x in self.carrito if x["id"] == producto["id"])
-        if linea["cantidad"] > linea["stock"]:
+        if linea["stock"] is not None and linea["cantidad"] > linea["stock"]:
             self.mensaje.configure(
                 text=f"Aviso: {linea['nombre']} tiene {linea['stock']} en stock; la venta se rechazará si no alcanza.",
                 text_color=NARANJA,
@@ -248,7 +249,7 @@ class PantallaVentas(ctk.CTkFrame):
             ctk.CTkLabel(
                 self.lista_carrito,
                 text=str(x["cantidad"]),
-                text_color=ROJO if x["cantidad"] > x["stock"] else None,
+                text_color=ROJO if x["stock"] is not None and x["cantidad"] > x["stock"] else None,
             ).grid(row=fila, column=3, padx=6)
             ctk.CTkButton(
                 self.lista_carrito, text="−", width=28, command=lambda i=x["id"]: self._cambiar_cantidad(i, -1)

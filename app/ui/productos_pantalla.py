@@ -122,7 +122,14 @@ class PantallaProductos(ctk.CTkFrame):
                 row=1, column=0, columnspan=8, pady=20
             )
         for fila, p in enumerate(filas, start=1):
-            textos = [p["sku"], p["nombre"], p["categoria"], _dinero(p["costo"]), _dinero(p["precio"]), str(p["stock_minimo"])]
+            textos = [
+                p["sku"],
+                p["nombre"] + ("  · servicio" if p["es_servicio"] else ""),
+                p["categoria"],
+                _dinero(p["costo"]),
+                _dinero(p["precio"]),
+                "—" if p["es_servicio"] else str(p["stock_minimo"]),
+            ]
             for columna, texto in enumerate(textos):
                 ctk.CTkLabel(self.lista, text=texto).grid(
                     row=fila, column=columna, padx=8, pady=2, sticky="w" if columna < 3 else "e"
@@ -218,7 +225,7 @@ class DialogoProducto(_Dialogo):
     ]
 
     def __init__(self, pantalla: PantallaProductos, producto: dict | None) -> None:
-        super().__init__(pantalla, "Editar producto" if producto else "Nuevo producto", "460x600")
+        super().__init__(pantalla, "Editar producto" if producto else "Nuevo producto", "460x660")
         self.producto = producto
         self.entradas: dict[str, ctk.CTkEntry] = {}
 
@@ -241,6 +248,17 @@ class DialogoProducto(_Dialogo):
                 valor = producto["costo" if clave == "costo" else clave]
                 entrada.insert(0, "" if valor is None else str(valor))
 
+        self.es_servicio = ctk.CTkSwitch(
+            marco, text="Es un servicio (no controla stock)", command=self._alternar_servicio
+        )
+        self.es_servicio.grid(row=len(self.CAMPOS) + 1, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        if producto is not None:
+            # El tipo se decide al crear: cambiarlo después dejaría el kardex sin sentido.
+            if producto["es_servicio"]:
+                self.es_servicio.select()
+                self.entradas["stock_minimo"].configure(state="disabled")
+            self.es_servicio.configure(state="disabled")
+
         if producto is not None:
             self.entradas["sku"].configure(state="disabled")  # el SKU no se edita
             if not pantalla.puede_precios:
@@ -256,6 +274,15 @@ class DialogoProducto(_Dialogo):
             self.entradas["stock_minimo"].insert(0, "0")
 
         ctk.CTkButton(self, text="Guardar", command=self.guardar).pack(pady=(0, 18))
+
+    def _alternar_servicio(self) -> None:
+        """Un servicio no maneja existencias: el stock mínimo no aplica."""
+        entrada = self.entradas["stock_minimo"]
+        entrada.configure(state="normal")
+        entrada.delete(0, "end")
+        entrada.insert(0, "0")
+        if self.es_servicio.get():
+            entrada.configure(state="disabled")
 
     def _id_categoria(self) -> int:
         nombre = self.categoria.get()
@@ -277,6 +304,7 @@ class DialogoProducto(_Dialogo):
                     codigo_barras=datos["codigo_barras"],
                     descripcion=datos["descripcion"],
                     marca=datos["marca"],
+                    es_servicio=bool(self.es_servicio.get()),
                 ),
                 exito="Producto creado.",
             )
