@@ -240,7 +240,7 @@ def test_producto_inactivo_no_se_vende_ni_aparece_en_busqueda(sesion_servicios, 
         vender(s, administrador, t, [{"producto_id": t.p1.id, "cantidad": 1}])
     assert producto_para_venta(s, administrador, "111", t.principal.id) is None
     assert buscar_para_venta(s, administrador, "Producto", t.principal.id) == [
-        {"id": t.p2.id, "sku": "P2", "nombre": "Producto 2", "precio": Decimal("5.00"), "stock": 5}
+        {"id": t.p2.id, "sku": "P2", "nombre": "Producto 2", "precio": Decimal("5.00"), "es_servicio": False, "stock": 5}
     ]
 
 
