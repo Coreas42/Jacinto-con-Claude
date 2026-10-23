@@ -80,8 +80,7 @@ def test_crear_gasto_guarda_y_audita(sesion_servicios, crear_con_rol, t):
 
 def test_solo_quien_tiene_permiso_registra_o_ve_gastos(sesion_servicios, crear_con_rol, t):
     s = sesion_servicios
-    for rol in ("vendedor", "bodeguero"):
-        actor = crear_con_rol(rol)
+    for actor in (t.vendedor, crear_con_rol("bodeguero")):
         with pytest.raises(PermisoDenegado):
             crear_gasto(s, actor, categoria="otros", descripcion="x", monto="1")
         s.rollback()
@@ -128,7 +127,7 @@ def test_anular_gasto(sesion_servicios, administrador, crear_con_rol, t):
     with pytest.raises(ErrorDeNegocio, match="motivo"):
         anular_gasto(s, administrador, g.id, " ")
     with pytest.raises(PermisoDenegado):
-        anular_gasto(s, crear_con_rol("vendedor"), g.id, "x")
+        anular_gasto(s, t.vendedor, g.id, "x")
     s.rollback()
     anular_gasto(s, administrador, g.id, "Se capturó dos veces")
     s.commit()
