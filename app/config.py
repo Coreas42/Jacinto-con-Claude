@@ -23,6 +23,7 @@ def _como_bool(valor: str | None, por_defecto: bool = False) -> bool:
 class Configuracion:
     database_url: str
     nombre_empresa: str
+    eslogan: str
     sql_debug: bool
 
 
@@ -35,5 +36,6 @@ def cargar_configuracion() -> Configuracion:
     return Configuracion(
         database_url=os.getenv("DATABASE_URL", "sqlite:///inventario.db"),
         nombre_empresa=os.getenv("NOMBRE_EMPRESA", "Mi Empresa"),
+        eslogan=os.getenv("ESLOGAN_EMPRESA", "").strip(),
         sql_debug=_como_bool(os.getenv("SQL_DEBUG")),
     )

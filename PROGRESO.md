@@ -22,7 +22,7 @@
 - Un usuario no puede cambiar su propio rol, desactivarse ni editar sus propios permisos (evita quedarse sin administrador).
 - Ventas: `ventas.ver` = solo las propias; `ventas.ver_todas` = las de todos los vendedores (contador y administrador). Reportes (Fase 5) seguirán la misma idea.
 
-## Esquema activo (migraciones `0001` a `0005`)
+## Esquema activo (migraciones `0001` a `0006`)
 
 - `sucursales`, `configuracion`
 - `roles`, `permisos` (módulo + acción, único), `roles_permisos`
@@ -38,6 +38,7 @@
 - `compras` + `compras_detalle`, `traslados`
 - `clientes` (nombre, teléfono, correo, activo)
 - `ventas` (número único, sucursal, vendedor, cliente, método de pago, subtotal, descuento, total, estado, nota, fecha; anulación: usuario, fecha, motivo) y `ventas_detalle` (cantidad, **precio y costo congelados**, descuento de línea)
+- `gastos` (fecha, categoría, descripción, monto > 0, sucursal opcional, usuario, estado activo/anulado, quién/cuándo/por qué se anuló)
 
 ## Permisos por módulo
 
@@ -92,6 +93,16 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Límite consciente: se agrega en Python sobre las líneas del periodo (bien hasta decenas de miles de líneas); para más volumen conviene pasar la agregación a SQL. El inventario valorizado lo ve quien tenga `reportes.ver` e `inventario.ver` (el vendedor ya ve costos en la pantalla de inventario; se revisa en la Fase 6).
 - No hay gráficos todavía: tablas y totales. Se evalúan en la fase de interfaz.
 
+## Interfaz y módulos nuevos (Fase 5.5)
+
+- **Estilo** (`ui/tema.py`): oscuro con acento morado (paleta inspirada en la imagen del negocio). `aplicar_tema()` recolorea el tema azul de CustomTkinter; si algo falla, queda el tema por defecto. Encabezado con nombre del negocio (`NOMBRE_EMPRESA`), línea opcional (`ESLOGAN_EMPRESA`), reloj y usuario; logo opcional en `assets/logo.png` (no se dibuja ni se incluye ningún logo). Menú con iconos emoji según permisos.
+- **Inicio** (`servicios/inicio.py`, `ui/inicio_pantalla.py`): ventas y ganancia del día con variación frente a ayer, unidades vendidas, inventario total, clientes, aviso de stock bajo, últimas ventas, más vendidos (30 días) y gráfica de 7 días. Cada bloque llega `None` si el rol no puede verlo; el vendedor ve solo lo suyo y sin ganancia.
+- **Gastos** (`servicios/gastos.py`): categorías fijas (alquiler, servicios, salarios, insumos, transporte, mantenimiento, publicidad, otros); sin edición ni borrado, solo anulación con motivo. Permiso `gastos` (ver, crear, anular): administrador y contador. `reportes.resultado_del_periodo` = utilidad bruta − gastos = utilidad neta (exige ver costos). Al filtrar por sucursal solo entran los gastos asignados a ella.
+- **Clientes**: editar (permiso `ventas.crear`) y desactivar/reactivar (`ventas.anular`); un cliente desactivado no se puede usar en ventas nuevas. **Proveedores**: editar con `inventario.editar` (nombre único).
+- Eventos auditados nuevos: `gasto_registrado`, `gasto_anulado`, `cliente_editado`, `cliente_activado/desactivado`, `proveedor_editado`.
+- Actualizar una instalación existente: `python main.py --migrar` y luego `python seed.py` (crea los permisos de `gastos` y se los da al contador sin quitar personalizaciones).
+- Pendiente consciente: no se incluyen fotos de producto, servicios sin stock (polarizado, instalación) ni la pantalla de configuración de la imagen original; son candidatos para una fase posterior. Los iconos son emoji (en Linux requieren una fuente de emoji instalada).
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -104,7 +115,9 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 4: `tests/test_fase4.py` escrita (unas 40 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-4-ventas`.
 - Fase 4: unida a `main` (PR #4), pruebas en verde.
 - Fase 5: `tests/test_fase5.py` escrita (unas 25 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-reportes`.
-- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora, productos, inventario, caja, historial de ventas y reportes).
+- Fase 5: unida a `main` (PR #5), pruebas en verde.
+- Fase 5.5 (interfaz): `tests/test_fase55.py` escrita (unas 45 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-5-interfaz`.
+- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, encabezado y reloj, menú, inicio, usuarios, permisos, bitácora, productos, inventario, clientes, proveedores, gastos, caja, historial de ventas y reportes).
 
 ## Fases planificadas
 
@@ -115,12 +128,12 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 | 2 | Catálogo de productos e historial de precios | Unida a `main` (PR #2) |
 | 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Unida a `main` (PR #3) |
 | 4 | Ventas (POS), anulaciones, comprobante | Unida a `main` (PR #4) |
-| 5 | Histórico y reportes | Código subido a rama, pruebas por correr |
-| 5.5 | Interfaz: diseño visual, tablas, tarjetas, caja cómoda | Pendiente (acordada) |
+| 5 | Histórico y reportes | Unida a `main` (PR #5) |
+| 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Código subido a rama, pruebas por correr |
 | 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Fase de interfaz (acordada con el usuario, antes del pulido final): paleta y tipografía coherentes, tablas más legibles, tarjetas de totales en el inicio, iconos en el menú, caja cómoda (letra grande, atajos de teclado). Preguntar: colores o logo del negocio, tema claro u oscuro, pantalla táctil o teclado con lector.
+Revisar a mano la interfaz (tema, inicio, menú, clientes, proveedores, gastos) y pedir ajustes visuales. Candidatos: servicios sin stock (polarizado, instalación, car wash), fotos de producto, pantalla de configuración, caja con más atajos.
 
-Después, Fase 6: validaciones, paginación, respaldos, Dockerfile, README completo, guía de GitHub, revisión de seguridad y `verificar_consistencia` en `--salud`.
+Después, Fase 6: validaciones, paginación, respaldos, Dockerfile, README completo, guía de GitHub, revisión de seguridad (incluida la visibilidad de costos en inventario para el vendedor) y `verificar_consistencia` en `--salud`.

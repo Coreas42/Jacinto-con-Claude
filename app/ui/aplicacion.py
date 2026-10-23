@@ -1,6 +1,8 @@
-"""Ventana principal: login, menú lateral según permisos y cambio de módulo."""
+"""Ventana principal: login, encabezado, menú lateral según permisos y cambio de módulo."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 import customtkinter as ctk
 from sqlalchemy import Engine, func, select
@@ -17,28 +19,24 @@ from app.servicios.autenticacion import (
     iniciar_sesion,
 )
 from app.servicios.errores import ErrorDeNegocio
-from app.servicios.permisos import NOMBRES_MODULOS
+from app.ui import tema
 
 ROJO = "#d64545"
 VERDE = "#2e9e5b"
 
-# Módulos cuya pantalla llega en una fase posterior.
-FASE_DE_MODULO: dict[str, int] = {}
-
 
 class Aplicacion(ctk.CTk):
     def __init__(self, motor: Engine) -> None:
+        tema.aplicar_tema()
         super().__init__()
         self.motor = motor
         self.fabrica = crear_fabrica_sesiones(motor)
         self.configuracion = cargar_configuracion()
         self.usuario: SesionUsuario | None = None
 
-        ctk.set_appearance_mode("system")
-        ctk.set_default_color_theme("blue")
         self.title(f"{self.configuracion.nombre_empresa} · Inventario y ventas")
-        self.geometry("1100x680")
-        self.minsize(900, 560)
+        self.geometry("1280x780")
+        self.minsize(1000, 620)
         self.mostrar_login()
 
     # ---- navegación entre pantallas -------------------------------------------------
@@ -121,96 +119,166 @@ class PantallaLogin(ctk.CTkFrame):
             self.clave.delete(0, "end")
 
 
+# (clave, icono, texto, módulo cuyo permiso lo habilita; None = siempre)
+MENU = [
+    ("inicio", "🏠", "Inicio", None),
+    ("productos", "📦", "Productos", "productos"),
+    ("ventas", "🛒", "Ventas", "ventas"),
+    ("inventario", "🏬", "Inventario", "inventario"),
+    ("clientes", "👥", "Clientes", "ventas"),
+    ("proveedores", "🚚", "Proveedores", "inventario"),
+    ("gastos", "💸", "Gastos", "gastos"),
+    ("reportes", "📊", "Reportes", "reportes"),
+    ("usuarios", "🔐", "Usuarios", "usuarios"),
+    ("bitacora", "📜", "Bitácora", "bitacora"),
+]
+
+
 class PantallaPrincipal(ctk.CTkFrame):
     def __init__(self, app: Aplicacion) -> None:
         super().__init__(app, fg_color="transparent")
         self.app = app
         usuario = app.usuario
         assert usuario is not None
+        self._reloj_id: str | None = None
 
-        menu = ctk.CTkFrame(self, width=220, corner_radius=0)
+        self._armar_encabezado(app, usuario)
+
+        cuerpo = ctk.CTkFrame(self, fg_color="transparent")
+        cuerpo.pack(fill="both", expand=True)
+        menu = ctk.CTkFrame(cuerpo, width=200, corner_radius=0, fg_color=tema.SUPERFICIE)
         menu.pack(side="left", fill="y")
         menu.pack_propagate(False)
 
-        ctk.CTkLabel(
-            menu,
-            text=app.configuracion.nombre_empresa,
-            font=ctk.CTkFont(size=18, weight="bold"),
-            wraplength=190,
-        ).pack(padx=16, pady=(20, 2))
-        ctk.CTkLabel(menu, text=f"{usuario.nombre}\n({usuario.rol})", text_color="gray").pack(
-            padx=16, pady=(0, 16)
-        )
-
         # El menú solo ofrece los módulos para los que el usuario tiene algún permiso.
         self.botones: dict[str, ctk.CTkButton] = {}
-        for modulo in usuario.modulos:
+        habilitados = [m for m in MENU if m[3] is None or m[3] in usuario.modulos]
+        for clave, icono, texto, _ in habilitados if usuario.modulos else []:
             boton = ctk.CTkButton(
-                menu,
-                text=NOMBRES_MODULOS[modulo],
-                anchor="w",
-                command=lambda m=modulo: self.mostrar_modulo(m),
+                menu, text=f"  {icono}   {texto}", anchor="w", height=40, corner_radius=8,
+                fg_color="transparent", hover_color=tema.SUPERFICIE_2, text_color=tema.TEXTO,
+                font=tema.fuente(14), command=lambda c=clave: self.mostrar_modulo(c),
             )
-            boton.pack(fill="x", padx=12, pady=3)
-            self.botones[modulo] = boton
+            boton.pack(fill="x", padx=10, pady=2)
+            self.botones[clave] = boton
 
         ctk.CTkButton(
-            menu,
-            text="Cerrar sesión",
-            fg_color="transparent",
-            border_width=1,
-            text_color=("gray10", "gray90"),
-            command=app.salir,
+            menu, text="Cerrar sesión", fg_color="transparent", border_width=1, border_color=tema.BORDE,
+            text_color=tema.TEXTO_SUAVE, hover_color=tema.SUPERFICIE_2, command=app.salir,
         ).pack(side="bottom", fill="x", padx=12, pady=16)
 
-        self.contenido = ctk.CTkFrame(self, fg_color="transparent")
-        self.contenido.pack(side="left", fill="both", expand=True, padx=20, pady=20)
+        self.contenido = ctk.CTkFrame(cuerpo, fg_color="transparent")
+        self.contenido.pack(side="left", fill="both", expand=True, padx=18, pady=14)
 
         if usuario.modulos:
-            self.mostrar_modulo(usuario.modulos[0])
+            self.mostrar_modulo("inicio")
         else:
             ctk.CTkLabel(
                 self.contenido,
                 text="Tu usuario no tiene módulos asignados.\nPide a un administrador que te dé acceso.",
             ).pack(expand=True)
 
+    # ---- encabezado -----------------------------------------------------------------
+
+    def _armar_encabezado(self, app: Aplicacion, usuario: SesionUsuario) -> None:
+        barra = ctk.CTkFrame(self, fg_color=tema.SUPERFICIE, corner_radius=0, height=76)
+        barra.pack(fill="x")
+        barra.pack_propagate(False)
+
+        logo = tema.cargar_logo(56)
+        if logo is not None:
+            ctk.CTkLabel(barra, text="", image=logo).pack(side="left", padx=(16, 4), pady=8)
+        titulo = ctk.CTkFrame(barra, fg_color="transparent")
+        titulo.pack(side="left", padx=12)
+        ctk.CTkLabel(
+            titulo, text=app.configuracion.nombre_empresa.upper(), font=tema.fuente(24, True), text_color=tema.ACENTO_HOVER
+        ).pack(anchor="w", pady=(10, 0))
+        if app.configuracion.eslogan:
+            ctk.CTkLabel(
+                titulo, text=app.configuracion.eslogan, font=tema.fuente(11), text_color=tema.TEXTO_SUAVE
+            ).pack(anchor="w")
+
+        persona = ctk.CTkFrame(barra, fg_color=tema.SUPERFICIE_2, border_width=1, border_color=tema.BORDE, corner_radius=10)
+        persona.pack(side="right", padx=(8, 16), pady=10)
+        ctk.CTkLabel(persona, text="👤", font=tema.fuente(22)).pack(side="left", padx=(10, 6))
+        datos = ctk.CTkFrame(persona, fg_color="transparent")
+        datos.pack(side="left", padx=(0, 12), pady=4)
+        ctk.CTkLabel(datos, text=usuario.nombre, font=tema.fuente(13, True), anchor="w").pack(fill="x")
+        ctk.CTkLabel(datos, text=usuario.rol.capitalize(), font=tema.fuente(11), text_color=tema.TEXTO_SUAVE, anchor="w").pack(fill="x")
+
+        reloj = ctk.CTkFrame(barra, fg_color=tema.SUPERFICIE_2, border_width=1, border_color=tema.BORDE, corner_radius=10)
+        reloj.pack(side="right", pady=10)
+        self.fecha = ctk.CTkLabel(reloj, text="", font=tema.fuente(11), text_color=tema.TEXTO_SUAVE)
+        self.fecha.pack(padx=14, pady=(4, 0))
+        self.hora = ctk.CTkLabel(reloj, text="", font=tema.fuente(20, True))
+        self.hora.pack(padx=14, pady=(0, 4))
+        self._tic()
+
+    def _tic(self) -> None:
+        ahora = datetime.now()
+        self.fecha.configure(text=tema.fecha_larga(ahora.date()))
+        self.hora.configure(text=ahora.strftime("%I:%M:%S %p").lstrip("0"))
+        self._reloj_id = self.after(1000, self._tic)
+
+    def destroy(self) -> None:
+        if self._reloj_id is not None:
+            try:
+                self.after_cancel(self._reloj_id)
+            except Exception:  # noqa: BLE001
+                pass
+        super().destroy()
+
+    # ---- navegación -----------------------------------------------------------------
+
     def mostrar_modulo(self, modulo: str) -> None:
         for widget in self.contenido.winfo_children():
             widget.destroy()
         for nombre, boton in self.botones.items():
-            boton.configure(fg_color=("#1f6aa5" if nombre == modulo else "gray40"))
+            boton.configure(fg_color=tema.ACENTO if nombre == modulo else "transparent")
 
-        if modulo == "productos":
+        if modulo == "inicio":
+            from app.ui.inicio_pantalla import PantallaInicio
+
+            pantalla: ctk.CTkFrame = PantallaInicio(self.contenido, self.app, self.mostrar_modulo)
+        elif modulo == "productos":
             from app.ui.productos_pantalla import PantallaProductos
 
-            PantallaProductos(self.contenido, self.app).pack(fill="both", expand=True)
-        elif modulo == "inventario":
-            from app.ui.inventario_pantalla import PantallaInventario
-
-            PantallaInventario(self.contenido, self.app).pack(fill="both", expand=True)
+            pantalla = PantallaProductos(self.contenido, self.app)
         elif modulo == "ventas":
             from app.ui.ventas_pantalla import PantallaVentas
 
-            PantallaVentas(self.contenido, self.app).pack(fill="both", expand=True)
+            pantalla = PantallaVentas(self.contenido, self.app)
+        elif modulo == "inventario":
+            from app.ui.inventario_pantalla import PantallaInventario
+
+            pantalla = PantallaInventario(self.contenido, self.app)
+        elif modulo == "clientes":
+            from app.ui.clientes_pantalla import PantallaClientes
+
+            pantalla = PantallaClientes(self.contenido, self.app)
+        elif modulo == "proveedores":
+            from app.ui.proveedores_pantalla import PantallaProveedores
+
+            pantalla = PantallaProveedores(self.contenido, self.app)
+        elif modulo == "gastos":
+            from app.ui.gastos_pantalla import PantallaGastos
+
+            pantalla = PantallaGastos(self.contenido, self.app)
         elif modulo == "reportes":
             from app.ui.reportes_pantalla import PantallaReportes
 
-            PantallaReportes(self.contenido, self.app).pack(fill="both", expand=True)
+            pantalla = PantallaReportes(self.contenido, self.app)
         elif modulo == "usuarios":
             from app.ui.usuarios_pantalla import PantallaUsuarios
 
-            PantallaUsuarios(self.contenido, self.app).pack(fill="both", expand=True)
+            pantalla = PantallaUsuarios(self.contenido, self.app)
         elif modulo == "bitacora":
             from app.ui.bitacora_pantalla import PantallaBitacora
 
-            PantallaBitacora(self.contenido, self.app).pack(fill="both", expand=True)
+            pantalla = PantallaBitacora(self.contenido, self.app)
         else:
-            fase = FASE_DE_MODULO.get(modulo, "?")
-            ctk.CTkLabel(
-                self.contenido,
-                text=f"{NOMBRES_MODULOS[modulo]}\n\nEste módulo se activa en la Fase {fase}.",
-                font=ctk.CTkFont(size=16),
-            ).pack(expand=True)
+            return
+        pantalla.pack(fill="both", expand=True)
 
 
 def abrir_aplicacion(motor: Engine) -> None:

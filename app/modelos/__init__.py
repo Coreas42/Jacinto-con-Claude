@@ -22,3 +22,4 @@ from app.modelos.seguridad import (  # noqa: F401
     roles_permisos,
 )
 from app.modelos.ventas import Cliente, Venta, VentaDetalle  # noqa: E402,F401
+from app.modelos.gastos import Gasto  # noqa: E402,F401

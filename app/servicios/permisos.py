@@ -22,6 +22,7 @@ CATALOGO: dict[str, list[str]] = {
     # "ver" = solo las ventas propias; "ver_todas" = las de todos los vendedores.
     "ventas": ["ver", "ver_todas", "crear", "anular"],
     "reportes": ["ver", "exportar"],
+    "gastos": ["ver", "crear", "anular"],
     "bitacora": ["ver"],
 }
 
@@ -31,6 +32,7 @@ NOMBRES_MODULOS = {
     "inventario": "Inventario y compras",
     "ventas": "Ventas",
     "reportes": "Reportes",
+    "gastos": "Gastos",
     "bitacora": "Bitácora",
 }
 
@@ -62,6 +64,7 @@ MATRIZ_BASE: dict[str, dict[str, list[str]]] = {
         "inventario": ["ver"],
         "ventas": ["ver", "ver_todas"],
         "reportes": ["ver", "exportar"],
+        "gastos": ["ver", "crear", "anular"],
         "bitacora": ["ver"],
     },
 }
