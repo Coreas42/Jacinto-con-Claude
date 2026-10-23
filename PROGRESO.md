@@ -80,6 +80,18 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Pendientes conscientes: no hay devoluciones parciales (se anula la venta completa y se vuelve a vender); no hay pagos mixtos ni cálculo de cambio; el número de venta es global (no por sucursal). En SQLite, dos cajas en el mismo archivo pueden recibir «database is locked» bajo carga; el stock nunca se sobrevende. Para varias cajas reales conviene PostgreSQL (`DATABASE_URL`).
 - Se descartó (sin poder probarlo) usar `BEGIN IMMEDIATE` en SQLite: bloquearía a cualquier sesión abierta, incluso solo de lectura.
 
+## Reportes (Fase 5)
+
+- `servicios/reportes.py`: `resumen_ventas`, `ventas_agrupadas` (por día, vendedor, producto, categoría o sucursal), `inventario_valorizado` y exportaciones CSV (`exportar_ventas_agrupadas_csv`, `exportar_detalle_ventas_csv`, `exportar_valorizado_csv`).
+- Permisos: `reportes.ver` para consultar, `reportes.exportar` para el CSV. Quien solo tiene `ventas.ver` (vendedor) ve únicamente sus ventas y **no recibe costos ni utilidad** (llegan como `None`). Con `ventas.ver_todas` (contador, administrador) se ve todo. Sin permiso de ventas (bodeguero) los reportes de ventas dan 403.
+- Solo cuentan ventas completadas; las anuladas se informan aparte (cantidad y monto).
+- Ingreso por línea = precio × cantidad − descuento de línea − parte proporcional del descuento general (repartido al centavo). Así todas las agrupaciones suman exactamente el total de las ventas.
+- Utilidad bruta = ingreso − costo congelado al vender. Margen % = utilidad / ingreso.
+- Fechas: se guardan en UTC; la pantalla usa días del calendario local (`rango_local`) y agrupa por día local.
+- CSV: se neutralizan textos que empiezan con `=`, `+`, `-` o `@` (inyección de fórmulas en Excel). Cada exportación queda en la bitácora (`reporte_exportado`).
+- Límite consciente: se agrega en Python sobre las líneas del periodo (bien hasta decenas de miles de líneas); para más volumen conviene pasar la agregación a SQL. El inventario valorizado lo ve quien tenga `reportes.ver` e `inventario.ver` (el vendedor ya ve costos en la pantalla de inventario; se revisa en la Fase 6).
+- No hay gráficos todavía: tablas y totales. Se evalúan en la fase de interfaz.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -90,11 +102,9 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 3: `tests/test_fase3.py` escrita (unas 35 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción** (PyPI bloqueado). Correr "Run workflow" en Actions sobre la rama `fase-3-inventario-kardex`.
 - Riesgo a vigilar en esa corrida: el cambio de `crear_motor` (BEGIN explícito en SQLite) toca también las migraciones y las pruebas anteriores.
 - Fase 4: `tests/test_fase4.py` escrita (unas 40 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-4-ventas`.
-- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora, productos, inventario, caja y historial de ventas).
-
-## Nota
-
-Existen archivos que no escribí y que nada importa: `app/servicios/catalogo_permisos.py`, `app/errores.py` y `app/utiles.py` (fecha 13:08-13:09 del 2026-10-19, en la carpeta de trabajo de la sesión `inventario/`, no en el repositorio). Definen alternativas a errores, utilidades y catálogo de permisos que ya existen. No se subieron. Decidir si se adopta algo o se descartan.
+- Fase 4: unida a `main` (PR #4), pruebas en verde.
+- Fase 5: `tests/test_fase5.py` escrita (unas 25 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-reportes`.
+- Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, menú, usuarios, permisos, bitácora, productos, inventario, caja, historial de ventas y reportes).
 
 ## Fases planificadas
 
@@ -104,10 +114,13 @@ Existen archivos que no escribí y que nada importa: `app/servicios/catalogo_per
 | 1 | Usuarios, roles, permisos por módulo, login, bitácora | Validada y unida a `main` |
 | 2 | Catálogo de productos e historial de precios | Unida a `main` (PR #2) |
 | 3 | Inventario, compras, kardex, alertas de stock mínimo, traslados entre sucursales | Unida a `main` (PR #3) |
-| 4 | Ventas (POS), anulaciones, comprobante | Código subido a rama, pruebas por correr |
-| 5 | Histórico y reportes | Pendiente |
+| 4 | Ventas (POS), anulaciones, comprobante | Unida a `main` (PR #4) |
+| 5 | Histórico y reportes | Código subido a rama, pruebas por correr |
+| 5.5 | Interfaz: diseño visual, tablas, tarjetas, caja cómoda | Pendiente (acordada) |
 | 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Fase 5: histórico y reportes: ventas por vendedor, producto, categoría y fecha; utilidad bruta (precio − costo congelados); inventario valorizado; kardex por producto; exportaciones CSV. Respetar `ventas.ver_todas` y los permisos de `reportes`.
+Fase de interfaz (acordada con el usuario, antes del pulido final): paleta y tipografía coherentes, tablas más legibles, tarjetas de totales en el inicio, iconos en el menú, caja cómoda (letra grande, atajos de teclado). Preguntar: colores o logo del negocio, tema claro u oscuro, pantalla táctil o teclado con lector.
+
+Después, Fase 6: validaciones, paginación, respaldos, Dockerfile, README completo, guía de GitHub, revisión de seguridad y `verificar_consistencia` en `--salud`.
