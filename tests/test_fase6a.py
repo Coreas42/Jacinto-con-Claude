@@ -64,7 +64,7 @@ def test_crear_servicio_ignora_el_stock_minimo(sesion_servicios, administrador, 
 
 def test_editar_servicio(sesion_servicios, administrador, t):
     s = sesion_servicios
-    assert editar_producto(s, administrador, t.s1.id, {"precio": "45", "costo": "18"}) == ["precio", "costo"]
+    assert editar_producto(s, administrador, t.s1.id, {"precio": "45", "costo": "18"}) == ["costo", "precio"]
     assert editar_producto(s, administrador, t.s1.id, {"stock_minimo": "0"}) == []
     with pytest.raises(ErrorDeNegocio, match="servicio"):
         editar_producto(s, administrador, t.s1.id, {"stock_minimo": "3"})
