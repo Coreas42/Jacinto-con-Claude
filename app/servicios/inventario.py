@@ -37,7 +37,7 @@ from app.modelos import (
 from app.servicios.auditoria import registrar
 from app.servicios.catalogo import a_dinero, actualizar_costo_promedio
 from app.servicios.errores import ErrorDeNegocio
-from app.servicios.permisos import exigir_permiso
+from app.servicios.permisos import exigir_permiso, puede_ver_costos
 
 CENTAVO = Decimal("0.01")
 _EXISTENCIAS = Existencia.__table__
@@ -521,7 +521,11 @@ def existencias(
 ) -> list[dict]:
     """Stock por producto en una sucursal (o el total si no se indica)."""
     exigir_permiso(sesion, actor, "inventario", "ver")
-    return _consultar_existencias(sesion, sucursal_id, texto, solo_bajo_minimo, incluir_inactivos)
+    filas = _consultar_existencias(sesion, sucursal_id, texto, solo_bajo_minimo, incluir_inactivos)
+    if not puede_ver_costos(sesion, actor):
+        for f in filas:  # el costo y el valor del inventario no son para el cajero
+            f["costo"] = f["valor"] = None
+    return filas
 
 
 def alertas_stock_bajo(sesion: Session, actor: Usuario, sucursal_id: int | None = None) -> list[dict]:
@@ -577,7 +581,11 @@ def kardex(
     """Movimientos de un producto, del más antiguo al más reciente, con saldo."""
     exigir_permiso(sesion, actor, "inventario", "ver")
     _producto(sesion, producto_id)
-    return _consultar_kardex(sesion, producto_id, sucursal_id, desde, hasta)
+    movimientos = _consultar_kardex(sesion, producto_id, sucursal_id, desde, hasta)
+    if not puede_ver_costos(sesion, actor):
+        for m in movimientos:
+            m["costo"] = None
+    return movimientos
 
 
 def verificar_consistencia(sesion: Session) -> list[dict]:
@@ -632,22 +640,33 @@ def verificar_consistencia(sesion: Session) -> list[dict]:
 # ---- exportación ---------------------------------------------------------------------
 
 
+def _celda(valor: Any) -> Any:
+    """Evita la inyección de fórmulas al abrir el CSV en Excel: un texto que empieza con = + - @ se neutraliza."""
+    if isinstance(valor, str) and valor[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        try:
+            Decimal(valor)  # un número escrito como texto no es una fórmula
+        except Exception:  # noqa: BLE001
+            return "'" + valor
+    return valor
+
+
 def _a_csv(encabezados: list[str], filas: list[list[Any]]) -> str:
     salida = io.StringIO()
     escritor = csv.writer(salida)
     escritor.writerow(encabezados)
-    escritor.writerows(filas)
+    escritor.writerows([[_celda(c) for c in fila] for fila in filas])
     return salida.getvalue()
 
 
 def exportar_existencias_csv(sesion: Session, actor: Usuario, sucursal_id: int | None = None) -> str:
     exigir_permiso(sesion, actor, "inventario", "exportar")
     filas = _consultar_existencias(sesion, sucursal_id, "", False, False)
+    ver = puede_ver_costos(sesion, actor)
     return _a_csv(
         ["SKU", "Producto", "Categoría", "Stock", "Stock mínimo", "Costo promedio", "Valor", "Stock bajo"],
         [
-            [f["sku"], f["nombre"], f["categoria"], f["stock"], f["stock_minimo"], f"{f['costo']:.2f}",
-             f"{f['valor']:.2f}", "sí" if f["bajo_minimo"] else "no"]
+            [f["sku"], f["nombre"], f["categoria"], f["stock"], f["stock_minimo"], f"{f['costo']:.2f}" if ver else "",
+             f"{f['valor']:.2f}" if ver else "", "sí" if f["bajo_minimo"] else "no"]
             for f in filas
         ],
     )
@@ -659,11 +678,12 @@ def exportar_kardex_csv(
     exigir_permiso(sesion, actor, "inventario", "exportar")
     _producto(sesion, producto_id)
     movimientos = _consultar_kardex(sesion, producto_id, sucursal_id, None, None)
+    ver = puede_ver_costos(sesion, actor)
     return _a_csv(
         ["Fecha (UTC)", "Sucursal", "Tipo", "Cantidad", "Saldo", "Costo unitario", "Motivo", "Referencia", "Usuario"],
         [
             [f"{m['fecha']:%Y-%m-%d %H:%M:%S}", m["sucursal"], m["tipo"], m["cantidad"], m["saldo"],
-             f"{m['costo']:.2f}", m["motivo"] or "", m["referencia"], m["usuario"]]
+             f"{m['costo']:.2f}" if ver else "", m["motivo"] or "", m["referencia"], m["usuario"]]
             for m in movimientos
         ],
     )

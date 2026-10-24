@@ -19,8 +19,10 @@ def _cabeza_de_migraciones() -> str | None:
     return ScriptDirectory.from_config(config).get_current_head()
 
 
-def verificar_salud(motor: Engine) -> dict:
+def verificar_salud(motor: Engine, revisar_inventario: bool = False) -> dict:
     """Comprueba la base de datos y que las migraciones estén al día.
+
+    Con ``revisar_inventario`` también compara cada existencia con su kardex (más lento).
 
     Devuelve un diccionario con ``estado`` igual a ``"ok"`` o ``"error"``.
     """
@@ -32,6 +34,8 @@ def verificar_salud(motor: Engine) -> dict:
         "estado": "error",
         "detalle": "",
     }
+    if revisar_inventario:
+        resultado["diferencias_de_inventario"] = None
     try:
         with motor.connect() as conexion:
             conexion.execute(text("SELECT 1"))
@@ -51,6 +55,21 @@ def verificar_salud(motor: Engine) -> dict:
             "La base de datos no está al día. Ejecuta: python main.py --migrar"
         )
         return resultado
+
+    if revisar_inventario:
+        from sqlalchemy.orm import Session
+
+        from app.servicios.inventario import verificar_consistencia
+
+        with Session(motor) as sesion:
+            diferencias = verificar_consistencia(sesion)
+        resultado["diferencias_de_inventario"] = len(diferencias)
+        if diferencias:
+            resultado["detalle"] = (
+                f"El inventario no cuadra con el kardex en {len(diferencias)} caso(s). "
+                "No sigas vendiendo hasta revisarlo."
+            )
+            return resultado
 
     resultado["estado"] = "ok"
     resultado["detalle"] = "Todo en orden."

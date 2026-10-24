@@ -35,6 +35,7 @@ ROJO = "#d64545"
 VERDE = "#2e9e5b"
 NARANJA = "#d98a00"
 CONSUMIDOR_FINAL = "Consumidor final"
+TAMANO_PAGINA = 25
 
 
 class PantallaVentas(ctk.CTkFrame):
@@ -303,24 +304,46 @@ class PantallaVentas(ctk.CTkFrame):
         barra = ctk.CTkFrame(marco, fg_color="transparent")
         barra.pack(fill="x", pady=(4, 6))
         ctk.CTkLabel(barra, text="Estado:").pack(side="left")
+        self.hist_pagina = 0
         self.hist_estado = ctk.CTkOptionMenu(
-            barra, values=["todas", "completada", "anulada"], width=130, command=lambda _v: self.recargar_historial()
+            barra, values=["todas", "completada", "anulada"], width=130, command=lambda _v: self._ir_a_pagina(0)
         )
         self.hist_estado.pack(side="left", padx=6)
         ctk.CTkButton(barra, text="Actualizar", width=90, command=self.recargar_historial).pack(side="left", padx=6)
         self.hist_nota = ctk.CTkLabel(barra, text="", text_color="gray")
         self.hist_nota.pack(side="left", padx=10)
+        self.hist_siguiente = ctk.CTkButton(barra, text="▶", width=36, command=lambda: self._ir_a_pagina(self.hist_pagina + 1))
+        self.hist_siguiente.pack(side="right", padx=2)
+        self.hist_numero = ctk.CTkLabel(barra, text="Página 1")
+        self.hist_numero.pack(side="right", padx=6)
+        self.hist_anterior = ctk.CTkButton(barra, text="◀", width=36, command=lambda: self._ir_a_pagina(self.hist_pagina - 1))
+        self.hist_anterior.pack(side="right", padx=2)
         self.hist_lista = ctk.CTkScrollableFrame(marco)
         self.hist_lista.pack(fill="both", expand=True)
+
+    def _ir_a_pagina(self, pagina: int) -> None:
+        self.hist_pagina = max(pagina, 0)
+        self.recargar_historial()
 
     def recargar_historial(self) -> None:
         estado = self.hist_estado.get()
         estado = None if estado == "todas" else estado
-        ok, ventas = self.ejecutar(lambda s, a: listar_ventas(s, a, estado=estado))
+        desplazamiento = self.hist_pagina * TAMANO_PAGINA
+        ok, ventas = self.ejecutar(
+            lambda s, a: listar_ventas(s, a, estado=estado, limite=TAMANO_PAGINA + 1, desplazamiento=desplazamiento)
+        )
         for widget in self.hist_lista.winfo_children():
             widget.destroy()
         if not ok:
             return
+        hay_mas = len(ventas) > TAMANO_PAGINA
+        ventas = ventas[:TAMANO_PAGINA]
+        if not ventas and self.hist_pagina > 0:  # la página ya no existe (por ejemplo, tras filtrar)
+            self._ir_a_pagina(self.hist_pagina - 1)
+            return
+        self.hist_numero.configure(text=f"Página {self.hist_pagina + 1}")
+        self.hist_anterior.configure(state="normal" if self.hist_pagina > 0 else "disabled")
+        self.hist_siguiente.configure(state="normal" if hay_mas else "disabled")
         ve_todas = self.app.usuario.puede("ventas", "ver_todas")
         self.hist_nota.configure(text="" if ve_todas else "Ves solo tus propias ventas.")
         negrita = ctk.CTkFont(weight="bold")

@@ -113,6 +113,15 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Una venta con servicio y producto sigue siendo todo o nada.
 - Actualizar una instalación existente: `python main.py --migrar` (migración 0007; los productos existentes quedan como productos normales).
 
+## Pulido y seguridad (Fase 6b)
+
+- **Costos ocultos:** `permisos.puede_ver_costos` (tiene `ventas.ver_todas`, `productos.precios` o `inventario.crear`: administrador, contador, bodeguero). Quien no, recibe `costo`/`valor` en `None` en catálogo, existencias, kardex, historial de producto (se omiten los cambios de costo), inicio y CSV (columnas vacías); el inventario valorizado le da 403. El precio de venta sí lo ve.
+- **Bloqueo de acceso:** 5 intentos fallidos con el mismo correo en 15 minutos bloquean el inicio de sesión (aunque la clave sea correcta) hasta que pasen; vale también para correos inexistentes, no revela cuáles existen y un acceso correcto reinicia la cuenta. Eventos: `login_fallido`, `login_bloqueado`.
+- **Respaldos** (`app/respaldo.py`, solo SQLite): `python main.py --respaldo` crea `respaldos/respaldo_AAAAMMDD_HHMMSS_micro.db` con la API de respaldo de SQLite y verifica su integridad; se conservan los 14 más recientes. Un respaldo automático por día al abrir la aplicación (`RESPALDO_AUTOMATICO=false` lo desactiva; `CARPETA_RESPALDOS` cambia la carpeta). `python main.py --restaurar ARCHIVO` (con la aplicación cerrada) guarda antes la base actual como `antes_de_restaurar_*.db`. Con PostgreSQL usar `pg_dump`.
+- **Salud:** `python main.py --salud` ahora también compara cada existencia con su kardex (`verificar_consistencia`) y sale con error si no cuadra. El login sigue usando la versión liviana.
+- **Paginación:** el historial de ventas muestra 25 por página (`listar_ventas(..., desplazamiento=)`).
+- **Revisión de seguridad hecha:** contraseñas con argon2, permisos comprobados en servicios (no solo en la interfaz), vendedor limitado a sus ventas, CSV protegido contra fórmulas, auditoría de eventos sensibles, ventas y gastos sin borrado. Pendientes conscientes: no hay cierre de sesión por inactividad; los archivos de respaldo no van cifrados (guárdalos en un lugar seguro); `.env` y `*.db` están fuera de Git.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -129,6 +138,8 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 5.5 (interfaz): `tests/test_fase55.py` escrita (unas 45 pruebas con casos); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-5-5-interfaz`.
 - Fase 5.5: unida a `main` (PR #6), pruebas en verde.
 - Fase 6a (servicios): `tests/test_fase6a.py` escrita (9 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6a-servicios`.
+- Fase 6a: unida a `main` (PR #8), pruebas en verde.
+- Fase 6b: `tests/test_fase6b.py` escrita (unas 22 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6b-costos-respaldo` (si falla, el motivo aparece en las anotaciones de la corrida).
 - Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, encabezado y reloj, menú, inicio, usuarios, permisos, bitácora, productos, inventario, clientes, proveedores, gastos, caja, historial de ventas y reportes).
 
 ## Fases planificadas
@@ -142,11 +153,10 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 | 4 | Ventas (POS), anulaciones, comprobante | Unida a `main` (PR #4) |
 | 5 | Histórico y reportes | Unida a `main` (PR #5) |
 | 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Unida a `main` (PR #6) |
-| 6a | Servicios sin stock (polarizado, instalación, car wash) | Código subido a rama, pruebas por correr |
-| 6 | Pulido, respaldos, empaquetado, guía de GitHub | Pendiente |
+| 6a | Servicios sin stock (polarizado, instalación, car wash) | Unida a `main` (PR #8) |
+| 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Código subido a rama, pruebas por correr |
+| 6c | Dockerfile, README completo, guía de GitHub | Pendiente |
 
 ## Siguiente paso
 
-Revisar a mano la interfaz y pedir ajustes visuales. Candidatos: fotos de producto, pantalla de configuración, caja con más atajos.
-
-Después, Fase 6: validaciones, paginación, respaldos, Dockerfile, README completo, guía de GitHub, revisión de seguridad (incluida la visibilidad de costos en inventario para el vendedor) y `verificar_consistencia` en `--salud`.
+Fase 6c: Dockerfile (para pruebas y comandos; la ventana de escritorio no corre en contenedor), README completo (instalación en Windows, uso por rol, respaldos, actualización de versiones) y guía de GitHub paso a paso.

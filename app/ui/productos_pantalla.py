@@ -25,7 +25,7 @@ TODAS = "Todas las categorías"
 
 
 def _dinero(valor: Any) -> str:
-    return f"{valor:,.2f}"
+    return "—" if valor is None else f"{valor:,.2f}"
 
 
 class PantallaProductos(ctk.CTkFrame):
