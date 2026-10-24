@@ -74,17 +74,15 @@ def crear_respaldo(
     url: str | None = None, carpeta: str | Path | None = None, conservar: int = CONSERVAR_POR_DEFECTO,
     prefijo: str = PREFIJO,
 ) -> Path:
-    """Crea ``respaldo_AAAAMMDD_HHMMSS.db`` y conserva solo los ``conservar`` más recientes."""
+    """Crea ``respaldo_AAAAMMDD_HHMMSS_micro.db`` y conserva solo los ``conservar`` más recientes."""
     origen = archivo_de_la_base(url)
     if not origen.is_file():
         raise ErrorDeNegocio(f"No existe la base de datos en {origen}.")
     destino = carpeta_de_respaldos(carpeta)
     destino.mkdir(parents=True, exist_ok=True)
-    archivo = destino / f"{prefijo}{datetime.now():%Y%m%d_%H%M%S}.db"
-    contador = 1
-    while archivo.exists():  # dos respaldos en el mismo segundo
-        archivo = destino / f"{prefijo}{datetime.now():%Y%m%d_%H%M%S}_{contador}.db"
-        contador += 1
+    # Con microsegundos el orden por nombre es el orden cronológico, incluso con varios respaldos en un segundo.
+    ahora = datetime.now()
+    archivo = destino / f"{prefijo}{ahora:%Y%m%d_%H%M%S}_{ahora.microsecond:06d}.db"
     _copiar(origen, archivo)
     if not _integra(archivo):
         archivo.unlink(missing_ok=True)
