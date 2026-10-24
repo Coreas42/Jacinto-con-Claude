@@ -65,7 +65,7 @@ def panel_inicio(sesion: Session, actor: Usuario, hoy: date | None = None, dias:
         return {
             "productos": len(filas),
             "unidades": sum(f["stock"] for f in filas),
-            "valor": sum((f["valor"] for f in filas), CERO),
+            "valor": None if any(f["valor"] is None for f in filas) else sum((f["valor"] for f in filas), CERO),
             "stock_bajo": sum(1 for f in filas if f["bajo_minimo"]),
         }
 

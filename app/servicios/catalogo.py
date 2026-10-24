@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.modelos import Categoria, HistorialProducto, Producto, Usuario
 from app.servicios.auditoria import registrar
 from app.servicios.errores import ErrorDeNegocio
-from app.servicios.permisos import exigir_permiso
+from app.servicios.permisos import exigir_permiso, puede_ver_costos
 
 CENTAVO = Decimal("0.01")
 MAXIMO_DINERO = Decimal("9999999999.99")
@@ -154,7 +154,7 @@ def _historial(
     )
 
 
-def _a_dict(producto: Producto) -> dict:
+def _a_dict(producto: Producto, ver_costos: bool = True) -> dict:
     return {
         "id": producto.id,
         "sku": producto.sku,
@@ -164,7 +164,7 @@ def _a_dict(producto: Producto) -> dict:
         "categoria_id": producto.categoria_id,
         "categoria": producto.categoria.nombre,
         "marca": producto.marca,
-        "costo": producto.costo_promedio,
+        "costo": producto.costo_promedio if ver_costos else None,
         "precio": producto.precio,
         "stock_minimo": producto.stock_minimo,
         "activo": producto.activo,
@@ -414,7 +414,8 @@ def buscar_productos(
         consulta = consulta.where(Producto.categoria_id == categoria_id)
     if not incluir_inactivos:
         consulta = consulta.where(Producto.activo.is_(True))
-    return [_a_dict(p) for p in sesion.scalars(consulta.limit(limite))]
+    ver_costos = puede_ver_costos(sesion, actor)
+    return [_a_dict(p, ver_costos) for p in sesion.scalars(consulta.limit(limite))]
 
 
 def obtener_por_codigo(
@@ -436,7 +437,7 @@ def obtener_por_codigo(
     if solo_activos:
         consulta = consulta.where(Producto.activo.is_(True))
     producto = sesion.scalar(consulta)
-    return _a_dict(producto) if producto else None
+    return _a_dict(producto, puede_ver_costos(sesion, actor)) if producto else None
 
 
 def historial_producto(sesion: Session, actor: Usuario, producto_id: int) -> list[dict]:
@@ -449,6 +450,8 @@ def historial_producto(sesion: Session, actor: Usuario, producto_id: int) -> lis
         .where(HistorialProducto.producto_id == producto_id)
         .order_by(HistorialProducto.id.desc())
     ).all()
+    if not puede_ver_costos(sesion, actor):
+        filas = [(h, nombre) for h, nombre in filas if h.campo != "costo"]
     return [
         {
             "fecha": h.creado_en,

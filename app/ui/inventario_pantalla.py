@@ -156,7 +156,7 @@ class PantallaInventario(ctk.CTkFrame):
                 row=1, column=0, columnspan=8, pady=20
             )
         for fila, f in enumerate(filas, start=1):
-            textos = [f["sku"], f["nombre"], f["categoria"], str(f["stock"]), str(f["stock_minimo"]), f"{f['costo']:,.2f}"]
+            textos = [f["sku"], f["nombre"], f["categoria"], str(f["stock"]), str(f["stock_minimo"]), "—" if f["costo"] is None else f"{f['costo']:,.2f}"]
             for columna, texto_celda in enumerate(textos):
                 ctk.CTkLabel(
                     self.lista,
@@ -392,7 +392,7 @@ class DialogoKardex(_Dialogo):
                 detalle = " · ".join(x for x in (m["motivo"], m["referencia"], m["usuario"]) if x)
                 texto.insert(
                     "end",
-                    f"{m['fecha']:%Y-%m-%d %H:%M}  {m['tipo']:<17} {m['cantidad']:>+6} {m['saldo']:>6} {m['costo']:>8.2f}  {detalle}\n",
+                    f"{m['fecha']:%Y-%m-%d %H:%M}  {m['tipo']:<17} {m['cantidad']:>+6} {m['saldo']:>6} {('—' if m['costo'] is None else format(m['costo'], '.2f')):>8}  {detalle}\n",
                 )
         elif ok:
             texto.insert("end", "Este producto aún no tiene movimientos en esta sucursal.")

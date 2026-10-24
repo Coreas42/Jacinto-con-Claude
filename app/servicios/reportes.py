@@ -28,8 +28,8 @@ from sqlalchemy.orm import Session
 from app.modelos import Categoria, Producto, Sucursal, Usuario, Venta, VentaDetalle
 from app.servicios.auditoria import registrar
 from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
-from app.servicios.inventario import existencias
-from app.servicios.permisos import exigir_permiso
+from app.servicios.inventario import _celda, existencias
+from app.servicios.permisos import exigir_permiso, puede_ver_costos
 from app.servicios.ventas import _ve_todas, formatear_numero
 
 CENTAVO = Decimal("0.01")
@@ -258,6 +258,8 @@ def resultado_del_periodo(
 def inventario_valorizado(sesion: Session, actor: Usuario, sucursal_id: int | None = None) -> dict:
     """Stock × costo promedio por producto, con totales y subtotales por categoría."""
     exigir_permiso(sesion, actor, "reportes", "ver")
+    if not puede_ver_costos(sesion, actor):
+        raise PermisoDenegado("ventas", "ver_todas")  # el valor del inventario se calcula con costos
     filas = [f for f in existencias(sesion, actor, sucursal_id) if f["stock"] > 0]
     por_categoria: dict[str, dict] = {}
     for f in filas:
@@ -273,16 +275,6 @@ def inventario_valorizado(sesion: Session, actor: Usuario, sucursal_id: int | No
 
 
 # ---- exportación ---------------------------------------------------------------------
-
-
-def _celda(valor: Any) -> Any:
-    """Evita la inyección de fórmulas al abrir el CSV en Excel: un texto que empieza con = + - @ se neutraliza."""
-    if isinstance(valor, str) and valor[:1] in ("=", "+", "-", "@", "\t", "\r"):
-        try:
-            Decimal(valor)  # un número negativo escrito como texto no es una fórmula
-        except Exception:  # noqa: BLE001
-            return "'" + valor
-    return valor
 
 
 def _a_csv(encabezados: list[str], filas: list[list[Any]]) -> str:

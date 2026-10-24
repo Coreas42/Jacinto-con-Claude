@@ -147,6 +147,17 @@ def permisos_efectivos(sesion: Session, usuario: Usuario) -> set[tuple[str, str]
     return efectivos
 
 
+# Quien tenga alguno de estos permisos necesita conocer los costos para trabajar: el contador y el
+# administrador (utilidad), quien cambia precios y costos, y quien registra compras (bodeguero).
+# El vendedor/cajero no los ve: vender no requiere conocer el margen.
+PERMISOS_QUE_VEN_COSTOS = (("ventas", "ver_todas"), ("productos", "precios"), ("inventario", "crear"))
+
+
+def puede_ver_costos(sesion: Session, usuario: Usuario) -> bool:
+    efectivos = permisos_efectivos(sesion, usuario)
+    return any(permiso in efectivos for permiso in PERMISOS_QUE_VEN_COSTOS)
+
+
 def tiene_permiso(sesion: Session, usuario: Usuario, modulo: str, accion: str) -> bool:
     return (modulo, accion) in permisos_efectivos(sesion, usuario)
 

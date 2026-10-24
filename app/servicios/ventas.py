@@ -419,8 +419,9 @@ def listar_ventas(
     estado: str | None = None,
     sucursal_id: int | None = None,
     limite: int = 200,
+    desplazamiento: int = 0,
 ) -> list[dict]:
-    """Ventas más recientes primero. Quien solo tiene ``ver`` recibe únicamente las suyas."""
+    """Ventas más recientes primero (``desplazamiento`` salta las primeras, para paginar). Quien solo tiene ``ver`` recibe únicamente las suyas."""
     todas = _ve_todas(sesion, actor)
     consulta = (
         select(Venta, Usuario.nombre, Cliente.nombre)
@@ -428,6 +429,7 @@ def listar_ventas(
         .outerjoin(Cliente, Cliente.id == Venta.cliente_id)
         .order_by(Venta.id.desc())
         .limit(limite)
+        .offset(max(int(desplazamiento), 0))
     )
     if not todas:
         consulta = consulta.where(Venta.vendedor_id == actor.id)
