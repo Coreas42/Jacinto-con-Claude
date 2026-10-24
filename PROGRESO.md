@@ -1,7 +1,7 @@
 # PROGRESO
 
-**Fase actual:** 3 (Inventario y kardex) — código subido a la rama `fase-3-inventario-kardex`; pruebas pendientes de correr en GitHub Actions.
-**Fecha:** 2026-10-20
+**Fase actual:** 6c (documentación) — código subido a la rama `fase-6c-documentacion`.
+**Fecha:** 2026-10-24
 
 ## Diagnóstico acordado
 
@@ -139,7 +139,8 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 5.5: unida a `main` (PR #6), pruebas en verde.
 - Fase 6a (servicios): `tests/test_fase6a.py` escrita (9 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6a-servicios`.
 - Fase 6a: unida a `main` (PR #8), pruebas en verde.
-- Fase 6b: `tests/test_fase6b.py` escrita (unas 22 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6b-costos-respaldo` (si falla, el motivo aparece en las anotaciones de la corrida).
+- Fase 6b: unida a `main`, pruebas en verde.
+- Fase 6c: prueba nueva en `tests/test_seed.py` (seed sin ejemplos). Correr "Run workflow" sobre la rama `fase-6c-documentacion`.
 - Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, encabezado y reloj, menú, inicio, usuarios, permisos, bitácora, productos, inventario, clientes, proveedores, gastos, caja, historial de ventas y reportes).
 
 ## Fases planificadas
@@ -154,9 +155,15 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 | 5 | Histórico y reportes | Unida a `main` (PR #5) |
 | 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Unida a `main` (PR #6) |
 | 6a | Servicios sin stock (polarizado, instalación, car wash) | Unida a `main` (PR #8) |
-| 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Código subido a rama, pruebas por correr |
-| 6c | Dockerfile, README completo, guía de GitHub | Pendiente |
+| 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Unida a `main` |
+| 6c | Dockerfile, README completo, guía de GitHub, `SEMBRAR_EJEMPLOS` | Código subido a rama |
+
+## Documentación (Fase 6c)
+
+- `README.md` completo (instalación en Windows, roles, flujos, respaldos, actualización, configuración, seguridad, PostgreSQL, Docker, problemas comunes) y `docs/GUIA_GITHUB.md`.
+- `SEMBRAR_EJEMPLOS=false` en `.env` hace que `seed.py` no cree productos ni stock de muestra (`sembrar(..., con_ejemplos=False)`).
+- `Dockerfile` (python:3.12-bookworm) y `.dockerignore`: solo para pruebas y comandos; la ventana no corre en contenedor. **No probado** en la sesión de construcción.
 
 ## Siguiente paso
 
-Fase 6c: Dockerfile (para pruebas y comandos; la ventana de escritorio no corre en contenedor), README completo (instalación en Windows, uso por rol, respaldos, actualización de versiones) y guía de GitHub paso a paso.
+Todas las fases planificadas están hechas. Candidatos para una fase futura: fotos de producto, pantalla de configuración, devoluciones parciales y pagos mixtos, cierre de sesión por inactividad, respaldos cifrados, método de costeo PEPS si se necesita.
