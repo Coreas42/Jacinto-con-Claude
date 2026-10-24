@@ -1,3 +1,6 @@
+import os
+import sys
+
 import pytest
 
 from app.db import crear_motor
@@ -57,3 +60,18 @@ def crear_con_rol(sesion_servicios, administrador):
         return usuario
 
     return _crear
+
+
+# ---- en GitHub Actions, cada prueba fallida también se publica como anotación ----------
+# (así el motivo se ve en la página de resumen de la corrida, sin abrir los registros)
+
+
+def _escapar(texto: str) -> str:
+    return texto.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def pytest_runtest_logreport(report):
+    if os.getenv("GITHUB_ACTIONS") and report.failed:
+        detalle = report.longreprtext.strip()[-700:]
+        sys.__stdout__.write(f"\n::error title=Prueba fallida::{_escapar(report.nodeid + chr(10) + detalle)}\n")
+        sys.__stdout__.flush()
