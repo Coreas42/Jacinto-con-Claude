@@ -122,6 +122,12 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - **Paginación:** el historial de ventas muestra 25 por página (`listar_ventas(..., desplazamiento=)`).
 - **Revisión de seguridad hecha:** contraseñas con argon2, permisos comprobados en servicios (no solo en la interfaz), vendedor limitado a sus ventas, CSV protegido contra fórmulas, auditoría de eventos sensibles, ventas y gastos sin borrado. Pendientes conscientes: no hay cierre de sesión por inactividad; los archivos de respaldo no van cifrados (guárdalos en un lugar seguro); `.env` y `*.db` están fuera de Git.
 
+## Configuración e inactividad (Fase 7a)
+
+- `servicios/configuracion.py` guarda parámetros en la tabla `configuracion` (sin migración nueva): `nombre_empresa`, `eslogan` (si no hay valor guardado se usa el `.env`) e `inactividad_minutos` (por defecto 15; 0 = nunca; máximo 480). Cambios auditados como `configuracion_cambiada` (valor anterior y nuevo).
+- Permiso nuevo `configuracion` (`ver`, `editar`), solo administrador. En una instalación existente: `python seed.py` (crea el permiso y se lo da al administrador).
+- Cierre por inactividad en `ui/aplicacion.py`: cualquier tecla, mouse o clic reinicia el reloj; revisa cada 10 s; al vencer cierra la sesión (`logout` + `sesion_expirada` en bitácora) y el login avisa. La lógica pura es `sesion_expirada`. Una venta sin cobrar en la caja se pierde.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -159,4 +165,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 
 ## Siguiente paso
 
-Fase 6c: Dockerfile (para pruebas y comandos; la ventana de escritorio no corre en contenedor), README completo (instalación en Windows, uso por rol, respaldos, actualización de versiones) y guía de GitHub paso a paso.
+Fase 7b (fotos de producto), luego 7c (pagos mixtos y devoluciones), 7d (PEPS) y 7e (respaldos cifrados). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).
