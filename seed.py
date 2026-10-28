@@ -6,6 +6,7 @@ Uso:
 Variables opcionales (también se leen del archivo .env):
     ADMIN_NOMBRE       nombre del administrador (por defecto "Administrador")
     ADMIN_CORREO       correo de acceso (por defecto "admin@ejemplo.com")
+    SEMBRAR_EJEMPLOS   "false" para no crear productos de muestra (recomendado en un negocio real)
     ADMIN_CONTRASENA   contraseña; si no se define, se pide por consola y, si se
                        deja vacía, se genera una aleatoria y se muestra una sola vez.
 
@@ -102,8 +103,13 @@ def sembrar_inventario_ejemplo(sesion: Session, actor: Usuario) -> bool:
     return True
 
 
-def sembrar(sesion: Session, nombre: str, correo: str, clave: str) -> Usuario | None:
-    """Siembra lo básico. Devuelve el administrador creado, o ``None`` si ya existía."""
+def sembrar(
+    sesion: Session, nombre: str, correo: str, clave: str, con_ejemplos: bool = True
+) -> Usuario | None:
+    """Siembra lo básico. Devuelve el administrador creado, o ``None`` si ya existía.
+
+    ``con_ejemplos`` agrega productos y stock de muestra (solo si aún no hay productos ni compras).
+    """
     sembrar_permisos_y_roles(sesion)
 
     if sesion.scalar(select(Sucursal.id).limit(1)) is None:
@@ -114,8 +120,9 @@ def sembrar(sesion: Session, nombre: str, correo: str, clave: str) -> Usuario | 
     creado = None
     if admin is None:
         admin = creado = crear_administrador_inicial(sesion, nombre, correo, clave)
-    sembrar_catalogo_ejemplo(sesion, admin)
-    sembrar_inventario_ejemplo(sesion, admin)
+    if con_ejemplos:
+        sembrar_catalogo_ejemplo(sesion, admin)
+        sembrar_inventario_ejemplo(sesion, admin)
     return creado
 
 
@@ -136,11 +143,12 @@ def main() -> int:
     nombre = os.getenv("ADMIN_NOMBRE", "Administrador")
     correo = os.getenv("ADMIN_CORREO", "admin@ejemplo.com")
     clave, generada = _obtener_clave()
+    con_ejemplos = os.getenv("SEMBRAR_EJEMPLOS", "true").strip().lower() not in {"0", "false", "no"}
 
     motor = crear_motor()
     fabrica = crear_fabrica_sesiones(motor)
     with sesion_transaccional(fabrica) as sesion:
-        admin = sembrar(sesion, nombre, correo, clave)
+        admin = sembrar(sesion, nombre, correo, clave, con_ejemplos=con_ejemplos)
 
     if admin is None:
         print(f"Permisos y roles al día. El administrador {correo} ya existía; no se modificó.")
