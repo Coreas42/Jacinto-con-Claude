@@ -36,6 +36,12 @@ def main() -> int:
             "--collect-submodules", "alembic",
             "--collect-submodules", "app",
             "--hidden-import", "seed",
+            # env.py y las migraciones se cargan como archivos (no como módulos), así que PyInstaller
+            # no ve lo que importan: se declaran aquí.
+            "--hidden-import", "logging.config",
+            "--hidden-import", "logging.handlers",
+            "--hidden-import", "sqlite3",
+            "--collect-submodules", "sqlalchemy.dialects.sqlite",
             # Recursos del programa. Las migraciones van en «migraciones» para no chocar con el paquete alembic.
             "--add-data", f"alembic{SEPARADOR}migraciones",
             "--add-data", f"alembic.ini{SEPARADOR}.",
