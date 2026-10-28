@@ -77,7 +77,8 @@ def _autoprueba(modulos_ui: list[str] | None = None) -> int:
     lineas: list[str] = []
     correcto = True
     try:
-        with tempfile.TemporaryDirectory() as temporal:
+        # Windows no deja borrar un archivo SQLite mientras algún motor siga abierto: no es un fallo de la prueba.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temporal:
             url = f"sqlite:///{(Path(temporal) / 'prueba.db').as_posix()}"
             migrar_a_ultima(url)
             lineas.append("migraciones: OK")

@@ -43,6 +43,7 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+    motor.dispose()  # suelta el archivo de la base (en Windows no se puede borrar mientras esté abierto)
 
 
 if context.is_offline_mode():
