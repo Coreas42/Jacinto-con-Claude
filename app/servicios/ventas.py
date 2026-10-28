@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import ahora_utc
-from app.modelos import Cliente, Producto, Sucursal, Usuario, Venta, VentaDetalle
+from app.modelos import Categoria, Cliente, Producto, Sucursal, Usuario, Venta, VentaDetalle
 from app.servicios.auditoria import registrar
 from app.servicios.catalogo import a_dinero
 from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
@@ -183,6 +183,30 @@ def buscar_para_venta(
         .limit(limite)
     )
     return [_producto_vendible(sesion, p, sucursal_id) for p in productos]
+
+
+def categorias_para_venta(sesion: Session, actor: Usuario) -> list[dict]:
+    """Categorías activas que tienen al menos un producto activo (para el catálogo de la caja)."""
+    exigir_permiso(sesion, actor, "ventas", "crear")
+    filas = sesion.execute(
+        select(Categoria.id, Categoria.nombre)
+        .join(Producto, Producto.categoria_id == Categoria.id)
+        .where(Categoria.activa.is_(True), Producto.activo.is_(True))
+        .group_by(Categoria.id, Categoria.nombre)
+        .order_by(Categoria.nombre)
+    )
+    return [{"id": i, "nombre": n} for i, n in filas]
+
+
+def catalogo_para_venta(
+    sesion: Session, actor: Usuario, sucursal_id: int, categoria_id: int | None = None, limite: int = 120
+) -> list[dict]:
+    """Productos y servicios activos para elegirlos con un clic, opcionalmente de una categoría."""
+    exigir_permiso(sesion, actor, "ventas", "crear")
+    consulta = select(Producto).where(Producto.activo.is_(True)).order_by(Producto.nombre).limit(limite)
+    if categoria_id is not None:
+        consulta = consulta.where(Producto.categoria_id == categoria_id)
+    return [_producto_vendible(sesion, p, sucursal_id) for p in sesion.scalars(consulta)]
 
 
 # ---- registrar una venta -------------------------------------------------------------
