@@ -86,6 +86,11 @@ class PantallaVentas(ctk.CTkFrame):
     def _cargar_sucursales(self) -> None:
         ok, sucursales = self.ejecutar(lambda s, a: listar_sucursales(s, a))
         self.sucursales = sucursales if ok else []
+        if self.puede_crear:
+            nombres = [s["nombre"] for s in self.sucursales] or ["—"]
+            actual = self.caja_sucursal.get()
+            self.caja_sucursal.configure(values=nombres)
+            self.caja_sucursal.set(actual if actual in nombres else nombres[0])
 
     def _cargar_clientes(self) -> None:
         ok, clientes = self.ejecutar(lambda s, a: listar_clientes(s, a))
