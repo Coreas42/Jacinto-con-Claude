@@ -137,6 +137,16 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Actualizar: `pip install -r requirements.txt` y `python main.py --migrar`.
 - Pendiente consciente: la caja aún no muestra fotos.
 
+## Pagos mixtos y devoluciones (Fase 7c)
+
+- Migración `0009`: `ventas_pagos` (venta, método, monto, recibido), `devoluciones` y `devoluciones_detalle`. Parte de `0008` (fotos): hay que unir 7b antes.
+- **Pagos:** `registrar_venta(..., pagos=[{"metodo","monto","recibido"}])`; la suma debe ser exactamente el total, sin métodos repetidos ni montos en cero si hay más de uno. `metodo_pago` queda en `mixto` cuando hay varios. Solo el efectivo admite `recibido` (cambio = recibido − monto). Sin `pagos` se usa `metodo_pago` por el total (siempre se guarda una fila de pago). Las ventas anteriores sin filas se muestran con su `metodo_pago`.
+- **Devoluciones** (`servicios/devoluciones.py`): permiso nuevo `ventas.devolver` (solo administrador por defecto; se concede por usuario). Solo ventas completadas; quien no ve todas las ventas solo devuelve las suyas. Reembolso por línea = ingreso de la línea (descuentos prorrateados) × unidades / vendidas, redondeo acumulado: al devolver todo se reembolsa exactamente lo cobrado. El stock vuelve a la sucursal de la venta al costo con que salió (movimiento `devolucion`); los servicios no mueven stock. `previsualizar_devolucion` calcula sin guardar. Auditoría: `devolucion_registrada`.
+- **Anulación:** una venta con devoluciones ya no se puede anular (se devuelve lo que falta); una anulada no admite devoluciones.
+- **Reportes:** las devoluciones restan unidades, ingreso y costo en el día en que se hicieron, con el vendedor y la sucursal de la venta original, y no cuentan como ventas. Con eso también cambian Inicio y resultado del periodo. La repartición del descuento ahora vive en `ventas.repartir_descuento`.
+- **Pantalla:** en la caja, «Efectivo recibido» con cambio en vivo y «Dividir pago…» (reparte el total, avisa si falta o sobra y se cancela solo si cambia el total). En el comprobante, «Devolver…» (elige cantidades, calcula el reembolso, pide motivo y forma de reembolso). El comprobante muestra pagos, cambio, devoluciones y neto.
+- Pendiente consciente: no hay devoluciones sin venta de origen; el reembolso solo se registra (no hay caja que cuadrar); el CSV de detalle de ventas no incluye aún lo devuelto.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -181,4 +191,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-do
 
 ## Siguiente paso
 
-Fase 7c (pagos mixtos y devoluciones), 7d (PEPS) y 7e (respaldos cifrados). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).
+Fase 7d (PEPS), 7e (respaldos cifrados) y 7f (instalador de Windows). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).

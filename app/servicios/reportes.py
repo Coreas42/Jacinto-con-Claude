@@ -6,6 +6,7 @@ Reglas:
   costos ni utilidad (esos campos llegan como ``None``). Con ``ventas.ver_todas`` (contador,
   administrador) se ve todo.
 - Solo cuentan las ventas completadas; las anuladas se informan aparte.
+- Las devoluciones restan unidades, ingreso y costo en el día en que se hicieron (no cuentan como ventas).
 - Ingreso = precio × cantidad − descuento de línea − parte proporcional del descuento
   general. El reparto se hace al centavo, así la suma de las líneas siempre coincide con
   el total de la venta.
@@ -25,12 +26,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modelos import Categoria, Producto, Sucursal, Usuario, Venta, VentaDetalle
+from app.modelos import Categoria, Devolucion, DevolucionDetalle, Producto, Sucursal, Usuario, Venta, VentaDetalle
 from app.servicios.auditoria import registrar
 from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
 from app.servicios.inventario import _celda, existencias
 from app.servicios.permisos import exigir_permiso, puede_ver_costos
 from app.servicios.ventas import _ve_todas, formatear_numero
+from app.servicios.ventas import repartir_descuento as _repartir  # noqa: F401  (nombre histórico)
 
 CENTAVO = Decimal("0.01")
 CERO = Decimal("0.00")
@@ -61,35 +63,18 @@ def _dia_local(fecha: datetime) -> str:
 # ---- núcleo: líneas de venta con el descuento general repartido ----------------------
 
 
-def _repartir(descuento: Decimal, netos: list[Decimal]) -> list[Decimal]:
-    """Reparte ``descuento`` proporcionalmente entre importes netos; la última línea absorbe el resto."""
-    subtotal = sum(netos, Decimal("0"))
-    if descuento == 0 or subtotal == 0:
-        return [CERO] * len(netos)
-    partes: list[Decimal] = []
-    acumulado = Decimal("0")
-    for indice, neto in enumerate(netos):
-        if indice == len(netos) - 1:
-            parte = descuento - acumulado
-        else:
-            parte = (descuento * neto / subtotal).quantize(CENTAVO, rounding=ROUND_HALF_UP)
-        partes.append(parte)
-        acumulado += parte
-    return partes
-
-
 def _condiciones(
     todas: bool, actor: Usuario, desde: datetime | None, hasta: datetime | None,
-    sucursal_id: int | None, vendedor_id: int | None,
+    sucursal_id: int | None, vendedor_id: int | None, con_fecha: bool = True,
 ) -> list[Any]:
     condiciones: list[Any] = []
     if not todas:
         condiciones.append(Venta.vendedor_id == actor.id)  # el filtro por vendedor no amplía el alcance
     elif vendedor_id is not None:
         condiciones.append(Venta.vendedor_id == vendedor_id)
-    if desde is not None:
+    if con_fecha and desde is not None:
         condiciones.append(Venta.creado_en >= desde)
-    if hasta is not None:
+    if con_fecha and hasta is not None:
         condiciones.append(Venta.creado_en < hasta)
     if sucursal_id is not None:
         condiciones.append(Venta.sucursal_id == sucursal_id)
@@ -145,6 +130,42 @@ def _lineas(
                 }
             )
 
+    # Devoluciones: restan en el día en que se hicieron (no en el de la venta original) y
+    # conservan vendedor y sucursal de la venta. No cuentan como ventas (``venta_id`` es ``None``).
+    cond_dev = _condiciones(todas, actor, None, None, sucursal_id, vendedor_id, con_fecha=False)
+    if desde is not None:
+        cond_dev.append(Devolucion.creado_en >= desde)
+    if hasta is not None:
+        cond_dev.append(Devolucion.creado_en < hasta)
+    consulta_dev = (
+        select(Devolucion, DevolucionDetalle, Producto, Categoria.nombre, Usuario.nombre, Sucursal.nombre)
+        .join(DevolucionDetalle, DevolucionDetalle.devolucion_id == Devolucion.id)
+        .join(VentaDetalle, VentaDetalle.id == DevolucionDetalle.detalle_id)
+        .join(Venta, Venta.id == Devolucion.venta_id)
+        .join(Producto, Producto.id == VentaDetalle.producto_id)
+        .join(Categoria, Categoria.id == Producto.categoria_id)
+        .join(Usuario, Usuario.id == Venta.vendedor_id)
+        .join(Sucursal, Sucursal.id == Venta.sucursal_id)
+        .where(Venta.estado == "completada", *cond_dev)
+        .order_by(Devolucion.id, DevolucionDetalle.id)
+    )
+    for dev, dd, producto, categoria, vendedor, sucursal in sesion.execute(consulta_dev):
+        lineas.append(
+            {
+                "venta_id": None,
+                "fecha": dev.creado_en,
+                "dia": _dia_local(dev.creado_en),
+                "vendedor": vendedor,
+                "sucursal": sucursal,
+                "producto_id": producto.id,
+                "producto": f"{producto.sku} · {producto.nombre}",
+                "categoria": categoria,
+                "cantidad": -dd.cantidad,
+                "ingreso": -dd.monto,
+                "costo": -(Decimal(dd.cantidad) * dd.costo_unitario).quantize(CENTAVO),
+            }
+        )
+
     anuladas = sesion.execute(
         select(func.count(), func.coalesce(func.sum(Venta.total), 0)).where(Venta.estado == "anulada", *condiciones)
     ).one()
@@ -168,7 +189,7 @@ def resumen_ventas(
     lineas, anuladas, todas = _lineas(sesion, actor, desde, hasta, sucursal_id, vendedor_id)
     ingreso = sum((l["ingreso"] for l in lineas), CERO)
     costo = sum((l["costo"] for l in lineas), CERO)
-    ventas = len({l["venta_id"] for l in lineas})
+    ventas = len({l["venta_id"] for l in lineas if l["venta_id"] is not None})
     return {
         "ventas": ventas,
         "unidades": sum(l["cantidad"] for l in lineas),
@@ -199,7 +220,8 @@ def ventas_agrupadas(
         g = grupos.setdefault(
             l[por], {"clave": l[por], "ventas": set(), "unidades": 0, "ingreso": CERO, "costo": CERO}
         )
-        g["ventas"].add(l["venta_id"])
+        if l["venta_id"] is not None:
+            g["ventas"].add(l["venta_id"])
         g["unidades"] += l["cantidad"]
         g["ingreso"] += l["ingreso"]
         g["costo"] += l["costo"]

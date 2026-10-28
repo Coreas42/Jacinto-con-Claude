@@ -20,7 +20,7 @@ CATALOGO: dict[str, list[str]] = {
     "productos": ["ver", "crear", "editar", "precios"],
     "inventario": ["ver", "crear", "editar", "anular", "exportar"],
     # "ver" = solo las ventas propias; "ver_todas" = las de todos los vendedores.
-    "ventas": ["ver", "ver_todas", "crear", "anular"],
+    "ventas": ["ver", "ver_todas", "crear", "anular", "devolver"],
     "reportes": ["ver", "exportar"],
     "gastos": ["ver", "crear", "anular"],
     "bitacora": ["ver"],

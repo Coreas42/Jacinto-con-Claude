@@ -62,3 +62,46 @@ class VentaDetalle(Base):
     precio_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2))  # congelado al vender
     costo_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2))  # congelado al vender
     descuento_linea: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"), server_default="0")
+
+
+class PagoVenta(Base):
+    """Cómo se pagó una venta. Una venta puede tener varias formas de pago (pago mixto).
+
+    ``monto`` es lo que se aplica a la venta; ``recibido`` (solo efectivo) es lo que entregó el
+    cliente, y el cambio es ``recibido - monto``.
+    """
+
+    __tablename__ = "ventas_pagos"
+    __table_args__ = (CheckConstraint("monto >= 0", name="monto_no_negativo"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venta_id: Mapped[int] = mapped_column(ForeignKey("ventas.id"), index=True)
+    metodo: Mapped[str] = mapped_column(String(20))
+    monto: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    recibido: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+
+
+class Devolucion(Base):
+    """Devolución parcial o total de una venta completada. Nunca se borra."""
+
+    __tablename__ = "devoluciones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venta_id: Mapped[int] = mapped_column(ForeignKey("ventas.id"), index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    motivo: Mapped[str] = mapped_column(String(200))
+    metodo_reembolso: Mapped[str] = mapped_column(String(20))
+    total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    creado_en: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class DevolucionDetalle(Base):
+    __tablename__ = "devoluciones_detalle"
+    __table_args__ = (CheckConstraint("cantidad > 0", name="cantidad_devuelta_positiva"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    devolucion_id: Mapped[int] = mapped_column(ForeignKey("devoluciones.id"), index=True)
+    detalle_id: Mapped[int] = mapped_column(ForeignKey("ventas_detalle.id"), index=True)
+    cantidad: Mapped[int]
+    monto: Mapped[Decimal] = mapped_column(Numeric(12, 2))  # lo reembolsado por estas unidades
+    costo_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2))  # el costo congelado de la venta
