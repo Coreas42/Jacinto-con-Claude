@@ -24,6 +24,7 @@ CATALOGO: dict[str, list[str]] = {
     "reportes": ["ver", "exportar"],
     "gastos": ["ver", "crear", "anular"],
     "bitacora": ["ver"],
+    "configuracion": ["ver", "editar"],
 }
 
 NOMBRES_MODULOS = {
@@ -34,6 +35,7 @@ NOMBRES_MODULOS = {
     "reportes": "Reportes",
     "gastos": "Gastos",
     "bitacora": "Bitácora",
+    "configuracion": "Configuración",
 }
 
 DESCRIPCION_ROLES = {
