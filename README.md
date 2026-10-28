@@ -62,7 +62,7 @@ En Linux y macOS es igual, pero se activa el entorno con `source venv/bin/activa
 |---|---|---|---|---|
 | Productos | todo | ver | ver y editar (sin precios) | ver |
 | Inventario | todo | ver | todo (compras, mermas, ajustes, traslados, CSV) | ver |
-| Ventas | todo, ver todas, anular | ver todas | — | ver las propias y vender |
+| Ventas | todo, ver todas, anular, devolver | ver todas | — | ver las propias y vender |
 | Reportes | ver y exportar | ver y exportar | ver (solo inventario) | ver (solo lo propio) |
 | Gastos | todo | ver, crear, anular | — | — |
 | Bitácora | ver | ver | — | — |
@@ -76,7 +76,11 @@ En Linux y macOS es igual, pero se activa el entorno con `source venv/bin/activa
 
 **Vender.** Menú *Ventas*: escanea el código o busca por nombre/SKU, ajusta cantidades, elige cliente y forma de pago, aplica descuento si hace falta y cobra. Se genera un número (`V-000001`) y un comprobante que se imprime con *Imprimir*. Los servicios se venden igual pero no descuentan stock.
 
-**Anular una venta.** *Ventas → Historial*, elegir la venta y anular con un motivo (permiso `ventas.anular`). El stock vuelve al kardex. Las ventas nunca se borran.
+**Cobrar con varias formas de pago.** En la caja, «Dividir pago…» reparte el total entre efectivo, tarjeta, transferencia u otro (debe sumar exacto). Con efectivo, escribe «Efectivo recibido» y verás el cambio; el comprobante lo muestra.
+
+**Anular una venta.** *Ventas → Historial*, elegir la venta y anular con un motivo (permiso `ventas.anular`). El stock vuelve al kardex. Las ventas nunca se borran. Una venta que ya tiene devoluciones no se anula.
+
+**Devolver parte de una venta.** *Ventas → Historial → Ver → Devolver…* (permiso `ventas.devolver`, solo el administrador por defecto): elige cuántas unidades regresan de cada línea, escribe el motivo y la forma de reembolso. El stock vuelve a la sucursal y los reportes restan lo devuelto en el día de la devolución. Se puede devolver varias veces hasta agotar las unidades.
 
 **Comprar mercadería.** *Inventario → Compra*: elige proveedor, productos, cantidades y costo. Recalcula el costo promedio y suma el stock.
 

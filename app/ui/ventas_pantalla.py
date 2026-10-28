@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import tempfile
 import webbrowser
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable
 
 import customtkinter as ctk
 
 from app.db import sesion_transaccional
+from app.servicios.devoluciones import previsualizar_devolucion, registrar_devolucion
 from app.servicios.comprobante import comprobante_html, comprobante_texto
 from app.servicios.errores import ErrorDeNegocio
 from app.servicios.inventario import listar_sucursales
@@ -49,6 +50,8 @@ class PantallaVentas(ctk.CTkFrame):
         usuario = app.usuario
         self.puede_crear = usuario.puede("ventas", "crear")
         self.puede_anular = usuario.puede("ventas", "anular")
+        self.puede_devolver = usuario.puede("ventas", "devolver")
+        self.pagos_mixtos: list[dict] | None = None
         self.puede_ver = usuario.puede("ventas", "ver") or usuario.puede("ventas", "ver_todas")
         self.sucursales: list[dict] = []
         self.clientes: list[dict] = []
@@ -158,12 +161,27 @@ class PantallaVentas(ctk.CTkFrame):
         self.caja_cliente.grid(row=0, column=1, padx=6, sticky="w")
         ctk.CTkButton(pie, text="Nuevo cliente", width=110, command=self._dialogo_cliente).grid(row=0, column=2, padx=4)
         ctk.CTkLabel(pie, text="Pago:").grid(row=0, column=3, padx=(16, 0))
-        self.caja_pago = ctk.CTkOptionMenu(pie, values=list(METODOS_PAGO), width=130)
+        self.caja_pago = ctk.CTkOptionMenu(
+            pie, values=list(METODOS_PAGO), width=130, command=lambda _v: self._actualizar_cambio()
+        )
         self.caja_pago.grid(row=0, column=4, padx=6)
         ctk.CTkLabel(pie, text="Descuento ($):").grid(row=0, column=5, padx=(16, 0))
         self.caja_descuento = ctk.CTkEntry(pie, width=90, placeholder_text="0")
         self.caja_descuento.grid(row=0, column=6, padx=6)
         self.caja_descuento.bind("<KeyRelease>", lambda _e: self._actualizar_total())
+
+        ctk.CTkLabel(pie, text="Efectivo recibido ($):").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.caja_recibido = ctk.CTkEntry(pie, width=110, placeholder_text="opcional")
+        self.caja_recibido.grid(row=1, column=2, padx=4, pady=(6, 0), sticky="w")
+        self.caja_recibido.bind("<KeyRelease>", lambda _e: self._actualizar_cambio())
+        self.caja_cambio = ctk.CTkLabel(pie, text="", font=tema.fuente(13, True))
+        self.caja_cambio.grid(row=1, column=3, columnspan=2, padx=(16, 0), pady=(6, 0), sticky="w")
+        self.boton_mixto = ctk.CTkButton(
+            pie, text="Dividir pago…", width=110, fg_color=tema.SUPERFICIE_2, command=self._dialogo_pago_mixto
+        )
+        self.boton_mixto.grid(row=1, column=5, columnspan=2, padx=(16, 0), pady=(6, 0), sticky="w")
+        self.aviso_mixto = ctk.CTkLabel(marco, text="", anchor="w", text_color=tema.ACENTO_SUAVE)
+        self.aviso_mixto.pack(fill="x", before=pie)
 
         cobro = ctk.CTkFrame(marco, fg_color="transparent")
         cobro.pack(fill="x", pady=(8, 0))
@@ -292,6 +310,8 @@ class PantallaVentas(ctk.CTkFrame):
     def vaciar(self) -> None:
         self.carrito = []
         self.caja_descuento.delete(0, "end")
+        self._limpiar_recibido()
+        self._quitar_pago_mixto("")
         self._pintar_carrito()
 
     def _subtotal(self) -> Decimal:
@@ -303,9 +323,69 @@ class PantallaVentas(ctk.CTkFrame):
         except Exception:  # noqa: BLE001  (texto no numérico: el servicio lo rechazará al cobrar)
             return Decimal("0")
 
+    def _total_cobrar(self) -> Decimal:
+        """Total a cobrar con las mismas reglas de redondeo del servicio (centavos, mitad hacia arriba)."""
+        cent = Decimal("0.01")
+        descuento = self._descuento().quantize(cent, rounding=ROUND_HALF_UP)
+        return max((self._subtotal() - descuento).quantize(cent, rounding=ROUND_HALF_UP), Decimal("0.00"))
+
     def _actualizar_total(self) -> None:
-        total = self._subtotal() - self._descuento()
-        self.caja_total.configure(text=f"Total: {max(total, Decimal('0')):,.2f}")
+        self.caja_total.configure(text=f"Total: {self._total_cobrar():,.2f}")
+        if self.pagos_mixtos is not None and sum((p["monto"] for p in self.pagos_mixtos), Decimal("0")) != self._total_cobrar():
+            self._quitar_pago_mixto("El total cambió: vuelve a dividir el pago.")
+        self._actualizar_cambio()
+
+    # ---- pago: efectivo recibido, cambio y pago mixto -------------------------------
+
+    def _recibido(self) -> Decimal | None:
+        texto = self.caja_recibido.get().strip().replace(",", ".")
+        if not texto:
+            return None
+        try:
+            return Decimal(texto).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except Exception:  # noqa: BLE001  (el servicio lo rechazará al cobrar)
+            return None
+
+    def _limpiar_recibido(self) -> None:
+        self.caja_recibido.configure(state="normal")  # un campo deshabilitado no deja borrar
+        self.caja_recibido.delete(0, "end")
+
+    def _actualizar_cambio(self) -> None:
+        recibido = self._recibido()
+        solo_efectivo = self.pagos_mixtos is None and self.caja_pago.get() == "efectivo"
+        self.caja_recibido.configure(state="normal" if solo_efectivo else "disabled")
+        if not solo_efectivo or recibido is None:
+            self.caja_cambio.configure(text="", text_color=tema.TEXTO)
+            return
+        diferencia = recibido - self._total_cobrar()
+        if diferencia >= 0:
+            self.caja_cambio.configure(text=f"Cambio: {diferencia:,.2f}", text_color=tema.VERDE)
+        else:
+            self.caja_cambio.configure(text=f"Faltan: {-diferencia:,.2f}", text_color=tema.ROJO)
+
+    def _dialogo_pago_mixto(self) -> None:
+        total = self._total_cobrar()
+        if not self.carrito or total <= 0:
+            self.mensaje.configure(text="Agrega productos al carrito antes de dividir el pago.", text_color=ROJO)
+            return
+        DialogoPagoMixto(self, total)
+
+    def _poner_pago_mixto(self, pagos: list[dict]) -> None:
+        self.pagos_mixtos = pagos
+        resumen = " + ".join(f"{p['metodo'].capitalize()} {p['monto']:,.2f}" for p in pagos)
+        cambios = [p for p in pagos if p.get("recibido") is not None]
+        if cambios:
+            resumen += f"  (cambio {cambios[0]['recibido'] - cambios[0]['monto']:,.2f})"
+        self.aviso_mixto.configure(text=f"Pago dividido: {resumen}")
+        self.boton_mixto.configure(text="Quitar división", command=lambda: self._quitar_pago_mixto(""))
+        self._limpiar_recibido()
+        self._actualizar_cambio()
+
+    def _quitar_pago_mixto(self, aviso: str = "") -> None:
+        self.pagos_mixtos = None
+        self.aviso_mixto.configure(text=aviso, text_color=NARANJA if aviso else tema.ACENTO_SUAVE)
+        self.boton_mixto.configure(text="Dividir pago…", command=self._dialogo_pago_mixto)
+        self._actualizar_cambio()
 
     def _pintar_carrito(self) -> None:
         for widget in self.lista_carrito.winfo_children():
@@ -349,10 +429,14 @@ class PantallaVentas(ctk.CTkFrame):
         lineas = [{"producto_id": x["id"], "cantidad": x["cantidad"]} for x in self.carrito]
         descuento = self.caja_descuento.get().strip().replace(",", ".") or "0"
         metodo = self.caja_pago.get()
+        pagos: list[dict] | None = self.pagos_mixtos
+        if pagos is None and metodo == "efectivo" and self.caja_recibido.get().strip():
+            # El servicio comprueba que lo recibido alcance y calcula el cambio.
+            pagos = [{"metodo": "efectivo", "monto": self._total_cobrar(), "recibido": self.caja_recibido.get().strip()}]
 
         ok, venta_id = self.ejecutar(
             lambda s, a: registrar_venta(
-                s, a, sucursal_id=sucursal, lineas=lineas, metodo_pago=metodo,
+                s, a, sucursal_id=sucursal, lineas=lineas, metodo_pago=metodo, pagos=pagos,
                 cliente_id=cliente, descuento=descuento,
             ).id
         )
@@ -512,11 +596,17 @@ class DialogoComprobante(_Dialogo):
         botones.pack(fill="x", padx=16, pady=(0, 6))
         ctk.CTkButton(botones, text="Imprimir", width=100, command=self.imprimir).pack(side="left", padx=(0, 6))
         ctk.CTkButton(botones, text="Cerrar", width=90, fg_color="gray40", command=self.destroy).pack(side="right")
-        if pantalla.puede_anular and venta["estado"] == "completada":
+        puede_anular = pantalla.puede_anular and venta["estado"] == "completada" and not venta["devoluciones"]
+        if puede_anular:
             ctk.CTkButton(botones, text="Anular venta", width=110, fg_color=ROJO, command=self.anular).pack(side="right", padx=6)
+        if (
+            pantalla.puede_devolver and venta["estado"] == "completada"
+            and any(l["disponible"] > 0 for l in venta["lineas"])
+        ):
+            ctk.CTkButton(botones, text="Devolver…", width=100, fg_color=tema.NARANJA, text_color="black", command=self.devolver).pack(side="right", padx=6)
 
         self.motivo = ctk.CTkEntry(self, placeholder_text="Motivo de la anulación (obligatorio para anular)")
-        if pantalla.puede_anular and venta["estado"] == "completada":
+        if puede_anular:
             self.motivo.pack(fill="x", padx=16, pady=(0, 14))
         self.aviso = ctk.CTkLabel(self, text="", text_color=ROJO)
         self.aviso.pack(pady=(0, 8))
@@ -527,6 +617,9 @@ class DialogoComprobante(_Dialogo):
         ruta.write_text(comprobante_html(self.venta, self.empresa), encoding="utf-8")
         webbrowser.open(ruta.as_uri())
 
+    def devolver(self) -> None:
+        DialogoDevolucion(self.pantalla, self.venta, self)
+
     def anular(self) -> None:
         if not self.motivo.get().strip():
             self.aviso.configure(text="Escribe el motivo para anular la venta.")
@@ -535,3 +628,163 @@ class DialogoComprobante(_Dialogo):
             self.destroy()
         else:
             self.aviso.configure(text=self.pantalla.mensaje.cget("text"))
+
+
+class DialogoPagoMixto(_Dialogo):
+    """Reparte el total entre varias formas de pago. El efectivo admite indicar lo recibido."""
+
+    def __init__(self, pantalla: PantallaVentas, total: Decimal) -> None:
+        super().__init__(pantalla, "Dividir pago", "440x420")
+        self.total = total
+        self.montos: dict[str, ctk.CTkEntry] = {}
+        ctk.CTkLabel(self, text=f"Total a cobrar: {total:,.2f}", font=tema.fuente(18, True)).pack(pady=(16, 8))
+        marco = ctk.CTkFrame(self, fg_color="transparent")
+        marco.pack(padx=20)
+        for fila, metodo in enumerate(METODOS_PAGO):
+            ctk.CTkLabel(marco, text=metodo.capitalize(), width=100, anchor="w").grid(row=fila, column=0, pady=4)
+            entrada = ctk.CTkEntry(marco, width=110, placeholder_text="0.00")
+            entrada.grid(row=fila, column=1, padx=6)
+            entrada.bind("<KeyRelease>", lambda _e: self._resumen())
+            self.montos[metodo] = entrada
+        ctk.CTkLabel(marco, text="Efectivo recibido", width=100, anchor="w").grid(row=len(METODOS_PAGO), column=0, pady=(10, 4))
+        self.recibido = ctk.CTkEntry(marco, width=110, placeholder_text="opcional")
+        self.recibido.grid(row=len(METODOS_PAGO), column=1, padx=6, pady=(10, 4))
+        self.recibido.bind("<KeyRelease>", lambda _e: self._resumen())
+        self.estado = ctk.CTkLabel(self, text="", font=tema.fuente(14, True))
+        self.estado.pack(pady=(14, 4))
+        self.aviso = ctk.CTkLabel(self, text="", text_color=ROJO, wraplength=380)
+        self.aviso.pack()
+        ctk.CTkButton(self, text="Aceptar", width=140, command=self.aceptar).pack(pady=12)
+        self._resumen()
+
+    def _numero(self, entrada: ctk.CTkEntry) -> Decimal | None:
+        texto = entrada.get().strip().replace(",", ".")
+        if not texto:
+            return Decimal("0.00")
+        try:
+            return Decimal(texto).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _resumen(self) -> None:
+        montos = [self._numero(e) for e in self.montos.values()]
+        if any(m is None for m in montos):
+            self.estado.configure(text="Hay un monto que no es un número.", text_color=ROJO)
+            return
+        suma = sum(montos, Decimal("0.00"))
+        diferencia = self.total - suma
+        if diferencia == 0:
+            self.estado.configure(text="Cuadra con el total ✔", text_color=tema.VERDE)
+        elif diferencia > 0:
+            self.estado.configure(text=f"Faltan {diferencia:,.2f}", text_color=tema.NARANJA)
+        else:
+            self.estado.configure(text=f"Sobran {-diferencia:,.2f}", text_color=tema.ROJO)
+
+    def aceptar(self) -> None:
+        pagos = []
+        for metodo, entrada in self.montos.items():
+            monto = self._numero(entrada)
+            if monto is None:
+                self.aviso.configure(text=f"El monto en {metodo} no es un número.")
+                return
+            if monto > 0:
+                pagos.append({"metodo": metodo, "monto": monto, "recibido": None})
+        if len(pagos) < 2:
+            self.aviso.configure(text="Para dividir el pago usa al menos dos formas de pago.")
+            return
+        if sum((p["monto"] for p in pagos), Decimal("0.00")) != self.total:
+            self.aviso.configure(text="Los montos deben sumar exactamente el total.")
+            return
+        recibido = self._numero(self.recibido)
+        if recibido:
+            efectivo = next((p for p in pagos if p["metodo"] == "efectivo"), None)
+            if efectivo is None:
+                self.aviso.configure(text="Indicaste efectivo recibido, pero no hay monto en efectivo.")
+                return
+            if recibido < efectivo["monto"]:
+                self.aviso.configure(text="El efectivo recibido es menor que el monto en efectivo.")
+                return
+            efectivo["recibido"] = recibido
+        self.pantalla._poner_pago_mixto(pagos)
+        self.destroy()
+
+
+class DialogoDevolucion(_Dialogo):
+    """Elige qué unidades se devuelven, calcula el reembolso y registra la devolución."""
+
+    def __init__(self, pantalla: PantallaVentas, venta: dict, comprobante: DialogoComprobante | None = None) -> None:
+        super().__init__(pantalla, f"Devolución · {venta['codigo']}", "620x560")
+        self.venta = venta
+        self.comprobante = comprobante
+        ctk.CTkLabel(self, text=f"Devolver de la venta {venta['codigo']}", font=tema.fuente(16, True)).pack(pady=(14, 4))
+        ctk.CTkLabel(self, text="Escribe cuántas unidades regresan de cada línea.", text_color=tema.TEXTO_SUAVE).pack()
+        cuerpo = ctk.CTkScrollableFrame(self, height=230)
+        cuerpo.pack(fill="x", padx=14, pady=8)
+        self.entradas: dict[int, ctk.CTkEntry] = {}
+        for fila, linea in enumerate(venta["lineas"]):
+            ctk.CTkLabel(cuerpo, text=linea["nombre"], anchor="w", width=260).grid(row=fila, column=0, padx=6, pady=3, sticky="w")
+            ctk.CTkLabel(
+                cuerpo, text=f"vendidas {linea['cantidad']} · devueltas {linea['devuelta']}", text_color=tema.TEXTO_SUAVE
+            ).grid(row=fila, column=1, padx=6)
+            if linea["disponible"] > 0:
+                entrada = ctk.CTkEntry(cuerpo, width=60, placeholder_text="0")
+                entrada.grid(row=fila, column=2, padx=6)
+                self.entradas[linea["detalle_id"]] = entrada
+            else:
+                ctk.CTkLabel(cuerpo, text="—", text_color=tema.TEXTO_SUAVE).grid(row=fila, column=2)
+        pie = ctk.CTkFrame(self, fg_color="transparent")
+        pie.pack(fill="x", padx=14)
+        self.motivo = ctk.CTkEntry(pie, placeholder_text="Motivo de la devolución (obligatorio)")
+        self.motivo.pack(fill="x", pady=4)
+        fila = ctk.CTkFrame(pie, fg_color="transparent")
+        fila.pack(fill="x", pady=4)
+        ctk.CTkLabel(fila, text="Reembolso en:").pack(side="left")
+        self.metodo = ctk.CTkOptionMenu(fila, values=list(METODOS_PAGO), width=140)
+        self.metodo.pack(side="left", padx=8)
+        ctk.CTkButton(fila, text="Calcular reembolso", width=150, fg_color=tema.SUPERFICIE_2, command=self.calcular).pack(side="right")
+        self.total = ctk.CTkLabel(self, text="", font=tema.fuente(18, True))
+        self.total.pack(pady=(8, 2))
+        self.aviso = ctk.CTkLabel(self, text="", text_color=ROJO, wraplength=560)
+        self.aviso.pack()
+        ctk.CTkButton(self, text="Registrar devolución", width=180, height=38, fg_color=tema.NARANJA, text_color="black", command=self.registrar).pack(pady=10)
+
+    def _lineas(self) -> list[dict]:
+        lineas = []
+        for detalle_id, entrada in self.entradas.items():
+            texto = entrada.get().strip()
+            if texto and texto != "0":
+                lineas.append({"detalle_id": detalle_id, "cantidad": texto})
+        return lineas
+
+    def calcular(self) -> None:
+        lineas = self._lineas()
+        if not lineas:
+            self.aviso.configure(text="Indica al menos una cantidad a devolver.")
+            return
+        ok, previa = self.pantalla.ejecutar(lambda s, a: previsualizar_devolucion(s, a, self.venta["id"], lineas))
+        if ok:
+            self.aviso.configure(text="")
+            self.total.configure(text=f"Reembolso: {previa['total']:,.2f}")
+        else:
+            self.aviso.configure(text=self.pantalla.mensaje.cget("text"))
+
+    def registrar(self) -> None:
+        lineas = self._lineas()
+        if not lineas:
+            self.aviso.configure(text="Indica al menos una cantidad a devolver.")
+            return
+        ok, resultado = self.pantalla.ejecutar(
+            lambda s, a: registrar_devolucion(s, a, self.venta["id"], lineas, self.motivo.get(), self.metodo.get())
+        )
+        if not ok:
+            self.aviso.configure(text=self.pantalla.mensaje.cget("text"))
+            return
+        self.pantalla.mensaje.configure(
+            text=f"Devolución {resultado['codigo']} registrada: reembolsa {resultado['total']:,.2f}.", text_color=VERDE
+        )
+        if self.pantalla.puede_ver:
+            self.pantalla.recargar_historial()
+        if self.comprobante is not None:
+            self.comprobante.destroy()
+        self.destroy()
+        self.pantalla.ver_venta(self.venta["id"])

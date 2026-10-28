@@ -13,6 +13,25 @@ def a_hora_local(fecha: datetime | None) -> str:
     return fecha.replace(tzinfo=timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
 
 
+def _pagos(venta: dict) -> list[dict]:
+    """Formas de pago de la venta (compatible con datos sin el detalle de pagos)."""
+    return venta.get("pagos") or [{"metodo": venta["metodo_pago"], "monto": venta["total"], "recibido": None, "cambio": None}]
+
+
+def _texto_pagos(venta: dict, ancho: int) -> list[str]:
+    pagos = _pagos(venta)
+    if len(pagos) == 1 and pagos[0]["recibido"] is None:
+        return [f"Pago: {pagos[0]['metodo']}"]
+    salida = ["Pagos:"] if len(pagos) > 1 else []
+    for p in pagos:
+        etiqueta = f"  {p['metodo'].capitalize()}" if len(pagos) > 1 else f"Pago: {p['metodo']}"
+        salida.append(etiqueta.ljust(ancho - 12) + f"{p['monto']:>12.2f}")
+        if p["recibido"] is not None:
+            salida.append("  Recibido".ljust(ancho - 12) + f"{p['recibido']:>12.2f}")
+            salida.append("  Cambio".ljust(ancho - 12) + f"{p['cambio']:>12.2f}")
+    return salida
+
+
 def comprobante_texto(venta: dict, empresa: str) -> str:
     ancho = 44
     lineas = [empresa.center(ancho), f"Comprobante {venta['codigo']}".center(ancho), "-" * ancho]
@@ -35,10 +54,21 @@ def comprobante_texto(venta: dict, empresa: str) -> str:
         "Subtotal".ljust(ancho - 12) + f"{venta['subtotal']:>12.2f}",
         "Descuento".ljust(ancho - 12) + f"{-venta['descuento']:>12.2f}",
         "TOTAL".ljust(ancho - 12) + f"{venta['total']:>12.2f}",
-        f"Pago: {venta['metodo_pago']}",
-        "-" * ancho,
-        "Gracias por su compra".center(ancho),
+        *_texto_pagos(venta, ancho),
     ]
+    devoluciones = venta.get("devoluciones") or []
+    if devoluciones:
+        lineas += ["-" * ancho, "DEVOLUCIONES".center(ancho)]
+        for d in devoluciones:
+            lineas.append(f"{d['codigo']} · {a_hora_local(d['fecha'])} · {d['usuario']}")
+            for l in d["lineas"]:
+                lineas.append(f"  {l['cantidad']} x {l['nombre']}".ljust(ancho - 12) + f"{-l['monto']:>12.2f}")
+            lineas.append(f"  Motivo: {d['motivo']} ({d['metodo_reembolso']})")
+        lineas += [
+            "Total devuelto".ljust(ancho - 12) + f"{-venta['total_devuelto']:>12.2f}",
+            "NETO".ljust(ancho - 12) + f"{venta['total'] - venta['total_devuelto']:>12.2f}",
+        ]
+    lineas += ["-" * ancho, "Gracias por su compra".center(ancho)]
     return "\n".join(lineas)
 
 
@@ -51,6 +81,25 @@ def comprobante_html(venta: dict, empresa: str) -> str:
         + (f"<tr class='d'><td colspan='3'>Descuento</td><td class='n'>-{l['descuento']:.2f}</td></tr>" if l["descuento"] else "")
         for l in venta["lineas"]
     )
+    pagos_html = "".join(
+        f"<br>{e(p['metodo'].capitalize())}: {p['monto']:.2f}"
+        + (f" (recibido {p['recibido']:.2f} · cambio {p['cambio']:.2f})" if p["recibido"] is not None else "")
+        for p in _pagos(venta)
+    )
+    devueltas = "".join(
+        f"<tr class='d'><td colspan='4'><b>{e(d['codigo'])}</b> · {e(a_hora_local(d['fecha']))} · {e(d['usuario'])} · "
+        f"{e(d['motivo'])}</td></tr>"
+        + "".join(
+            f"<tr class='d'><td>{e(l['nombre'])}</td><td class='n'>{l['cantidad']}</td><td></td><td class='n'>-{l['monto']:.2f}</td></tr>"
+            for l in d["lineas"]
+        )
+        for d in (venta.get("devoluciones") or [])
+    )
+    if devueltas:
+        devueltas = (
+            "<tr><th colspan='4'>Devoluciones</th></tr>" + devueltas
+            + f"<tr class='t'><td colspan='3'>NETO</td><td class='n'>{venta['total'] - venta['total_devuelto']:.2f}</td></tr>"
+        )
     anulada = ""
     if venta["estado"] == "anulada":
         anulada = (
@@ -84,8 +133,9 @@ Cliente: {e(venta['cliente'] or 'Consumidor final')}</p>
 {filas}
 <tr><td colspan="3">Subtotal</td><td class="n">{venta['subtotal']:.2f}</td></tr>
 <tr><td colspan="3">Descuento</td><td class="n">-{venta['descuento']:.2f}</td></tr>
-<tr class="t"><td colspan="3">TOTAL</td><td class="n">{venta['total']:.2f}</td></tr></table>
-<p class="meta">Forma de pago: {e(venta['metodo_pago'])}</p>
+<tr class="t"><td colspan="3">TOTAL</td><td class="n">{venta['total']:.2f}</td></tr>
+{devueltas}</table>
+<p class="meta">Forma de pago:{pagos_html}</p>
 <p class="c">Gracias por su compra</p>
 </body></html>
 """

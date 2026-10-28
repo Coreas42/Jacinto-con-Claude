@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import ahora_utc
-from app.modelos import Categoria, Cliente, Producto, Sucursal, Usuario, Venta, VentaDetalle
+from app.modelos import Categoria, Cliente, Devolucion, DevolucionDetalle, PagoVenta, Producto, Sucursal, Usuario, Venta, VentaDetalle
 from app.servicios.auditoria import registrar
 from app.servicios.catalogo import a_dinero
 from app.servicios.errores import ErrorDeNegocio, PermisoDenegado
@@ -40,6 +40,78 @@ METODOS_PAGO = ("efectivo", "tarjeta", "transferencia", "otro")
 
 def formatear_numero(numero: int) -> str:
     return f"V-{numero:06d}"
+
+
+def formatear_devolucion(devolucion_id: int) -> str:
+    return f"D-{devolucion_id:06d}"
+
+
+def repartir_descuento(descuento: Decimal, netos: list[Decimal]) -> list[Decimal]:
+    """Reparte el descuento general proporcionalmente entre importes netos, al centavo.
+
+    La última línea absorbe el resto, así la suma de las partes siempre es exactamente ``descuento``.
+    """
+    subtotal = sum(netos, Decimal("0"))
+    if descuento == 0 or subtotal == 0:
+        return [Decimal("0.00")] * len(netos)
+    partes: list[Decimal] = []
+    acumulado = Decimal("0")
+    for indice, neto in enumerate(netos):
+        if indice == len(netos) - 1:
+            parte = descuento - acumulado
+        else:
+            parte = (descuento * neto / subtotal).quantize(CENTAVO, rounding=ROUND_HALF_UP)
+        partes.append(parte)
+        acumulado += parte
+    return partes
+
+
+def ingresos_por_linea(venta: Venta, detalles: list[VentaDetalle]) -> list[Decimal]:
+    """Ingreso de cada línea: precio × cantidad − descuento de línea − su parte del descuento general."""
+    netos = [(Decimal(d.cantidad) * d.precio_unitario - d.descuento_linea).quantize(CENTAVO) for d in detalles]
+    partes = repartir_descuento(venta.descuento, netos)
+    return [neto - parte for neto, parte in zip(netos, partes)]
+
+
+def normalizar_pagos(pagos: list[dict[str, Any]] | None, metodo_pago: str | None, total: Decimal) -> list[dict[str, Any]]:
+    """Valida las formas de pago de una venta y devuelve ``[{"metodo", "monto", "recibido"}]``.
+
+    Sin ``pagos`` se usa ``metodo_pago`` por el total. Con ``pagos`` (pago mixto) la suma debe
+    ser exactamente el total; solo el efectivo admite ``recibido`` (lo entregado por el cliente).
+    """
+    if pagos is None:
+        metodo = str(metodo_pago or "").strip().lower()
+        if metodo not in METODOS_PAGO:
+            raise ErrorDeNegocio(f"Método de pago no válido. Usa: {', '.join(METODOS_PAGO)}.")
+        return [{"metodo": metodo, "monto": total, "recibido": None}]
+    if not pagos:
+        raise ErrorDeNegocio("Indica al menos una forma de pago.")
+    salida: list[dict[str, Any]] = []
+    vistos: set[str] = set()
+    for pago in pagos:
+        metodo = str(pago.get("metodo") or "").strip().lower()
+        if metodo not in METODOS_PAGO:
+            raise ErrorDeNegocio(f"Método de pago no válido. Usa: {', '.join(METODOS_PAGO)}.")
+        if metodo in vistos:
+            raise ErrorDeNegocio(f"La forma de pago «{metodo}» está repetida: suma los montos en una sola línea.")
+        vistos.add(metodo)
+        monto = a_dinero(pago.get("monto") or 0, f"monto en {metodo}")
+        if len(pagos) > 1 and monto == 0:
+            raise ErrorDeNegocio(f"El monto en {metodo} debe ser mayor que cero.")
+        recibido = pago.get("recibido")
+        if recibido in (None, ""):
+            recibido = None
+        else:
+            if metodo != "efectivo":
+                raise ErrorDeNegocio("Solo el efectivo admite indicar lo recibido.")
+            recibido = a_dinero(recibido, "efectivo recibido")
+            if recibido < monto:
+                raise ErrorDeNegocio("El efectivo recibido es menor que el monto en efectivo.")
+        salida.append({"metodo": metodo, "monto": monto, "recibido": recibido})
+    suma = sum((p["monto"] for p in salida), Decimal("0"))
+    if suma != total:
+        raise ErrorDeNegocio(f"Los pagos suman {suma:.2f} y el total de la venta es {total:.2f}.")
+    return salida
 
 
 def _texto(valor: Any, campo: str, largo: int, obligatorio: bool = False) -> str | None:
@@ -222,7 +294,8 @@ def registrar_venta(
     *,
     sucursal_id: int,
     lineas: list[dict[str, Any]],
-    metodo_pago: str,
+    metodo_pago: str | None = None,
+    pagos: list[dict[str, Any]] | None = None,
     cliente_id: int | None = None,
     descuento: Any = 0,
     nota: str | None = None,
@@ -231,13 +304,14 @@ def registrar_venta(
 
     Cada línea es ``{"producto_id", "cantidad"}`` con ``"descuento"`` opcional (monto
     en dinero para esa línea). ``descuento`` es un monto sobre el total de la venta.
+
+    El pago puede indicarse con un único ``metodo_pago`` o con ``pagos`` (pago mixto):
+    ``[{"metodo", "monto", "recibido" opcional}]``, cuya suma debe ser exactamente el total.
+    Si se envían ``pagos``, ``metodo_pago`` se ignora.
     """
     exigir_permiso(sesion, actor, "ventas", "crear")
     obtener_sucursal_activa(sesion, sucursal_id)
 
-    metodo = str(metodo_pago or "").strip().lower()
-    if metodo not in METODOS_PAGO:
-        raise ErrorDeNegocio(f"Método de pago no válido. Usa: {', '.join(METODOS_PAGO)}.")
     if cliente_id is not None:
         cliente = sesion.get(Cliente, cliente_id)
         if cliente is None or not cliente.activo:
@@ -268,6 +342,8 @@ def registrar_venta(
         raise ErrorDeNegocio("El descuento no puede ser mayor que el subtotal de la venta.")
     subtotal = subtotal.quantize(CENTAVO, rounding=ROUND_HALF_UP)
     total = (subtotal - descuento_total).quantize(CENTAVO, rounding=ROUND_HALF_UP)
+    formas_de_pago = normalizar_pagos(pagos, metodo_pago, total)
+    metodo = formas_de_pago[0]["metodo"] if len(formas_de_pago) == 1 else "mixto"
 
     for intento in range(5):
         try:
@@ -285,6 +361,8 @@ def registrar_venta(
                 )
                 sesion.add(venta)
                 sesion.flush()
+                for forma in formas_de_pago:
+                    sesion.add(PagoVenta(venta_id=venta.id, metodo=forma["metodo"], monto=forma["monto"], recibido=forma["recibido"]))
                 for producto, cantidad, descuento_linea, precio in validadas:
                     costo = producto.costo_promedio
                     if not producto.es_servicio:  # un servicio no descuenta existencias
@@ -337,6 +415,11 @@ def anular_venta(sesion: Session, actor: Usuario, venta_id: int, motivo: str) ->
         raise ErrorDeNegocio("La venta no existe.")
     if venta.estado == "anulada":
         raise ErrorDeNegocio(f"La venta {formatear_numero(venta.numero)} ya está anulada.")
+    if sesion.scalar(select(Devolucion.id).where(Devolucion.venta_id == venta.id).limit(1)) is not None:
+        raise ErrorDeNegocio(
+            f"La venta {formatear_numero(venta.numero)} ya tiene devoluciones: no se puede anular. "
+            "Devuelve las unidades que faltan."
+        )
 
     with sesion.begin_nested():
         venta.estado = "anulada"
@@ -402,15 +485,66 @@ def obtener_venta(sesion: Session, actor: Usuario, venta_id: int) -> dict:
         .where(VentaDetalle.venta_id == venta.id)
         .order_by(VentaDetalle.id)
     )
+    devuelto = dict(
+        sesion.execute(
+            select(DevolucionDetalle.detalle_id, func.sum(DevolucionDetalle.cantidad))
+            .join(Devolucion, Devolucion.id == DevolucionDetalle.devolucion_id)
+            .where(Devolucion.venta_id == venta.id)
+            .group_by(DevolucionDetalle.detalle_id)
+        ).all()
+    )
     for detalle, producto in filas:
+        ya = int(devuelto.get(detalle.id, 0))
         lineas.append(
             {
+                "detalle_id": detalle.id,
+                "devuelta": ya,
+                "disponible": detalle.cantidad - ya,
                 "sku": producto.sku,
                 "nombre": producto.nombre,
                 "cantidad": detalle.cantidad,
                 "precio": detalle.precio_unitario,
                 "descuento": detalle.descuento_linea,
                 "total": (Decimal(detalle.cantidad) * detalle.precio_unitario - detalle.descuento_linea).quantize(CENTAVO),
+            }
+        )
+    pagos = [
+        {
+            "metodo": pago.metodo,
+            "monto": pago.monto,
+            "recibido": pago.recibido,
+            "cambio": (pago.recibido - pago.monto) if pago.recibido is not None else None,
+        }
+        for pago in sesion.scalars(select(PagoVenta).where(PagoVenta.venta_id == venta.id).order_by(PagoVenta.id))
+    ]
+    if not pagos:  # ventas anteriores a los pagos mixtos
+        pagos = [{"metodo": venta.metodo_pago, "monto": venta.total, "recibido": None, "cambio": None}]
+    devoluciones = []
+    for dev, usuario_dev in sesion.execute(
+        select(Devolucion, Usuario.nombre)
+        .join(Usuario, Usuario.id == Devolucion.usuario_id)
+        .where(Devolucion.venta_id == venta.id)
+        .order_by(Devolucion.id)
+    ):
+        devoluciones.append(
+            {
+                "id": dev.id,
+                "codigo": formatear_devolucion(dev.id),
+                "fecha": dev.creado_en,
+                "usuario": usuario_dev,
+                "motivo": dev.motivo,
+                "metodo_reembolso": dev.metodo_reembolso,
+                "total": dev.total,
+                "lineas": [
+                    {"sku": prod.sku, "nombre": prod.nombre, "cantidad": dd.cantidad, "monto": dd.monto}
+                    for dd, prod in sesion.execute(
+                        select(DevolucionDetalle, Producto)
+                        .join(VentaDetalle, VentaDetalle.id == DevolucionDetalle.detalle_id)
+                        .join(Producto, Producto.id == VentaDetalle.producto_id)
+                        .where(DevolucionDetalle.devolucion_id == dev.id)
+                        .order_by(DevolucionDetalle.id)
+                    )
+                ],
             }
         )
     return {
@@ -422,6 +556,9 @@ def obtener_venta(sesion: Session, actor: Usuario, venta_id: int) -> dict:
         "vendedor": vendedor.nombre if vendedor else "",
         "cliente": cliente.nombre if cliente else None,
         "metodo_pago": venta.metodo_pago,
+        "pagos": pagos,
+        "devoluciones": devoluciones,
+        "total_devuelto": sum((d["total"] for d in devoluciones), Decimal("0.00")),
         "subtotal": venta.subtotal,
         "descuento": venta.descuento,
         "total": venta.total,
