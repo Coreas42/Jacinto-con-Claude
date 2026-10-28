@@ -33,7 +33,7 @@ No necesitas instalar Python ni usar la terminal.
 4. Abre **Inventario**. La primera vez aparece una pantalla de bienvenida: escribe el nombre del negocio y crea tu usuario administrador (el correo es tu usuario). No hace falta `seed.py`.
 
 - **Windows puede advertir** («Windows protegió su PC») porque el instalador no tiene firma digital de pago. Pulsa *Más información → Ejecutar de todas formas*.
-- **Tus datos** (base de datos, respaldos, fotos, `.env` y tu logo en `assets\logo.png`) viven en `%LOCALAPPDATA%\\Inventario`; en el menú Inicio hay un acceso a esa carpeta. Desinstalar o actualizar el programa no los borra.
+- **Tus datos** (base de datos, respaldos, fotos, `.env` y tu logo en `assets\logo.png`) viven en `%LOCALAPPDATA%\Inventario`; en el menú Inicio hay un acceso a esa carpeta. Desinstalar o actualizar el programa no los borra.
 - **Actualizar:** construye un instalador nuevo y ejecútalo encima. Al abrir, el programa aplica solo las migraciones y los permisos nuevos y antes hace un respaldo del día.
 - **Versión portátil:** descomprime `Inventario-portatil.zip` en cualquier carpeta y ejecuta `Inventario.exe`.
 - Si el programa no abre, revisa `error.log` en la carpeta de datos.
@@ -154,7 +154,7 @@ python main.py --salud                          # revisa la base y que el stock 
 | `RESPALDO_AUTOMATICO` | Respaldo diario al abrir | `true` |
 | `CARPETA_RESPALDOS` | Dónde se guardan los respaldos | `respaldos` |
 | `CARPETA_FOTOS` | Dónde se guardan las fotos de producto | `fotos` |
-| `INVENTARIO_DATOS` | Solo con el programa instalado: carpeta de datos | `%LOCALAPPDATA%\\Inventario` |
+| `INVENTARIO_DATOS` | Solo con el programa instalado: carpeta de datos | `%LOCALAPPDATA%\Inventario` |
 
 Para mostrar tu logo guarda el archivo como `assets/logo.png` (alto recomendado: 120 px o más); si no existe solo se muestra el nombre.
 

@@ -201,4 +201,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-do
 
 ## Siguiente paso
 
-Fase 7d (PEPS), 7e (respaldos cifrados) y 7f (instalador de Windows). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).
+Probar la fase 7f (Actions: «Pruebas» y luego «Instalador»; ajustar lo que falle en la primera construcción). Después: 7d (costeo PEPS configurable) y 7e (respaldos cifrados opcionales). La mejora de interfaz (colores, tamaños, caja con catálogo y fotos, atajos de teclado, modo claro/oscuro) queda pendiente sin fecha.
