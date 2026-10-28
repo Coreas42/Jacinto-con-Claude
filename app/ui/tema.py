@@ -75,8 +75,14 @@ def dinero(valor: Any) -> str:
 
 def cargar_logo(altura: int = 56) -> ctk.CTkImage | None:
     """Usa ``assets/logo.png`` si existe (el negocio pone allí su propio logo)."""
-    ruta = Path(__file__).resolve().parents[2] / "assets" / "logo.png"
-    if not ruta.is_file():
+    from app.config import DIRECTORIO_DATOS, RAIZ_PROYECTO
+
+    # El logo propio del negocio va en la carpeta de datos; si no hay, el que trae el programa.
+    ruta = next(
+        (c for c in (DIRECTORIO_DATOS / "assets" / "logo.png", RAIZ_PROYECTO / "assets" / "logo.png") if c.is_file()),
+        None,
+    )
+    if ruta is None:
         return None
     try:
         from PIL import Image

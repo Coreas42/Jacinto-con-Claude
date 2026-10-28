@@ -147,6 +147,16 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - **Pantalla:** en la caja, «Efectivo recibido» con cambio en vivo y «Dividir pago…» (reparte el total, avisa si falta o sobra y se cancela solo si cambia el total). En el comprobante, «Devolver…» (elige cantidades, calcula el reembolso, pide motivo y forma de reembolso). El comprobante muestra pagos, cambio, devoluciones y neto.
 - Pendiente consciente: no hay devoluciones sin venta de origen; el reembolso solo se registra (no hay caja que cuadrar); el CSV de detalle de ventas no incluye aún lo devuelto.
 
+## Instalador de Windows (Fase 7f)
+
+- **Empaquetado:** `instalador/construir.py` (PyInstaller, modo carpeta y sin consola) y `instalador/Inventario.iss` (Inno Setup, instalación por usuario, en español). Flujo manual `.github/workflows/instalador.yml` («Instalador») en `windows-latest`: construye, hace una **prueba de humo** del .exe (`Inventario.exe --autoprueba`: base temporal, migraciones, administrador, login con argon2, salud e importación de todas las pantallas; escribe `autoprueba.txt`), compila el instalador y sube `Instalador-Inventario.exe` y `Inventario-portatil.zip` como artifact `Inventario-Windows`. Si falla, las anotaciones traen el final del registro.
+- **Rutas** (`app/config.py`): con `sys.frozen` los recursos de solo lectura (migraciones en `migraciones/`, `alembic.ini`, assets) salen del paquete (`RAIZ_PROYECTO`) y todo lo escribible (base `inventario.db`, `respaldos/`, `fotos/`, `.env`, `assets/logo.png` propio) va a `DIRECTORIO_DATOS` = `%LOCALAPPDATA%\Inventario` (o `INVENTARIO_DATOS`). Sin empaquetar nada cambia. `RUTA_MIGRACIONES` unifica dónde están las migraciones.
+- **Arranque** (`main.py`): al abrir la ventana se hace el respaldo diario (si la base ya existe), se aplican las migraciones y se crean los permisos nuevos; así actualizar no requiere comandos. Un fallo al arrancar se guarda en `error.log` y se muestra en una ventana. Sin consola, stdout/stderr se redirigen a `os.devnull`.
+- **Primer uso** (`PantallaPrimerUso`): si no hay usuarios, la ventana pide negocio, nombre, correo y contraseña (y opcionalmente datos de ejemplo) y crea el administrador (reemplaza a `seed.py` para el usuario final).
+- `__version__` pasó a 0.7.0. `build/`, `dist/`, `salida/`, `autoprueba.txt` y `error.log` quedan fuera de Git.
+- **No se pudo construir ni probar el .exe en la sesión** (el entorno no es Windows y PyPI está bloqueado): la primera corrida del flujo «Instalador» puede necesitar ajustes (módulos que PyInstaller no detecte, etc.). El instalador no está firmado: Windows SmartScreen avisará.
+- Pendiente consciente: sin icono propio (`--icon`), sin actualización automática ni firma de código.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -191,4 +201,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-do
 
 ## Siguiente paso
 
-Fase 7d (PEPS), 7e (respaldos cifrados) y 7f (instalador de Windows). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).
+Probar la fase 7f (Actions: «Pruebas» y luego «Instalador»; ajustar lo que falle en la primera construcción). Después: 7d (costeo PEPS configurable) y 7e (respaldos cifrados opcionales). La mejora de interfaz (colores, tamaños, caja con catálogo y fotos, atajos de teclado, modo claro/oscuro) queda pendiente sin fecha.

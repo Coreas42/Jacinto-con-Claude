@@ -58,7 +58,14 @@ class Aplicacion(ctk.CTk):
 
     def mostrar_login(self) -> None:
         self._limpiar()
-        PantallaLogin(self).pack(expand=True)
+        try:
+            instalacion_nueva = not self.hay_usuarios()
+        except Exception:  # noqa: BLE001  (base no disponible: el login informa el estado)
+            instalacion_nueva = False
+        if instalacion_nueva:
+            PantallaPrimerUso(self).pack(expand=True)
+        else:
+            PantallaLogin(self).pack(expand=True)
 
     def mostrar_principal(self) -> None:
         self._limpiar()
@@ -169,6 +176,58 @@ class PantallaLogin(ctk.CTkFrame):
         except ErrorDeNegocio as error:
             self.mensaje.configure(text=str(error), text_color=ROJO)
             self.clave.delete(0, "end")
+
+
+class PantallaPrimerUso(ctk.CTkFrame):
+    """Primera vez (base sin usuarios): crea el negocio y el administrador sin usar la terminal."""
+
+    def __init__(self, app: Aplicacion) -> None:
+        super().__init__(app, fg_color="transparent")
+        self.app = app
+        ctk.CTkLabel(self, text="Bienvenido", font=tema.fuente(28, True)).pack(pady=(0, 2))
+        ctk.CTkLabel(self, text="Configura tu negocio y crea tu usuario administrador.", text_color=tema.TEXTO_SUAVE).pack(pady=(0, 16))
+        self.campos: dict[str, ctk.CTkEntry] = {}
+        for clave, texto, oculto in [
+            ("negocio", "Nombre del negocio", False),
+            ("nombre", "Tu nombre", False),
+            ("correo", "Correo (será tu usuario, debe llevar @)", False),
+            ("clave", "Contraseña (mínimo 8 caracteres)", True),
+            ("repetir", "Repite la contraseña", True),
+        ]:
+            entrada = ctk.CTkEntry(self, width=340, placeholder_text=texto, show="•" if oculto else "")
+            entrada.pack(pady=5)
+            self.campos[clave] = entrada
+        self.campos["negocio"].insert(0, app.configuracion.nombre_empresa if app.configuracion.nombre_empresa != "Mi Empresa" else "")
+        self.ejemplos = ctk.CTkSwitch(self, text="Cargar productos de ejemplo (para probar)")
+        self.ejemplos.pack(pady=(10, 2))
+        self.mensaje = ctk.CTkLabel(self, text="", text_color=ROJO, wraplength=340)
+        self.mensaje.pack(pady=(8, 0))
+        ctk.CTkButton(self, text="Crear y entrar", width=340, height=38, command=self.crear).pack(pady=12)
+        self.campos["repetir"].bind("<Return>", lambda _e: self.crear())
+        self.campos["negocio"].focus()
+
+    def crear(self) -> None:
+        from seed import sembrar
+        from app.servicios.configuracion import guardar_configuracion
+
+        datos = {clave: campo.get().strip() if clave not in ("clave", "repetir") else campo.get() for clave, campo in self.campos.items()}
+        if not datos["negocio"] or not datos["nombre"] or not datos["correo"]:
+            self.mensaje.configure(text="Completa el negocio, tu nombre y tu correo.")
+            return
+        if datos["clave"] != datos["repetir"]:
+            self.mensaje.configure(text="Las contraseñas no coinciden.")
+            return
+        try:
+            with sesion_transaccional(self.app.fabrica) as sesion:
+                admin = sembrar(sesion, datos["nombre"], datos["correo"], datos["clave"], con_ejemplos=bool(self.ejemplos.get()))
+                if admin is None:
+                    raise ErrorDeNegocio("Ya existe un usuario con ese correo.")
+                guardar_configuracion(sesion, admin, {"nombre_empresa": datos["negocio"]})
+        except ErrorDeNegocio as error:
+            self.mensaje.configure(text=str(error))
+            return
+        self.app._cargar_valores_guardados()
+        self.app.entrar(datos["correo"], datos["clave"])
 
 
 # (clave, icono, texto, módulo cuyo permiso lo habilita; None = siempre)

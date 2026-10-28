@@ -23,7 +23,23 @@ Pensada para negocios como accesorios de auto, instalación, polarizado y lavado
 - En Linux, `python3-tk` para la ventana: `sudo apt install python3-tk`.
 - Los iconos del menú son emoji; en Linux hace falta una fuente de emoji instalada.
 
-## Instalación en Windows (paso a paso)
+## Instalador de Windows (recomendado)
+
+No necesitas instalar Python ni usar la terminal.
+
+1. En GitHub: **Actions → Instalador → Run workflow**. Espera unos minutos y abre la corrida terminada.
+2. En **Artifacts** descarga `Inventario-Windows` (un .zip que contiene `Instalador-Inventario.exe` y `Inventario-portatil.zip`).
+3. Ejecuta `Instalador-Inventario.exe`. Se instala por usuario, sin permisos de administrador, y crea el acceso en el menú Inicio (y en el escritorio si lo eliges).
+4. Abre **Inventario**. La primera vez aparece una pantalla de bienvenida: escribe el nombre del negocio y crea tu usuario administrador (el correo es tu usuario). No hace falta `seed.py`.
+
+- **Windows puede advertir** («Windows protegió su PC») porque el instalador no tiene firma digital de pago. Pulsa *Más información → Ejecutar de todas formas*.
+- **Tus datos** (base de datos, respaldos, fotos, `.env` y tu logo en `assets\logo.png`) viven en `%LOCALAPPDATA%\Inventario`; en el menú Inicio hay un acceso a esa carpeta. Desinstalar o actualizar el programa no los borra.
+- **Actualizar:** construye un instalador nuevo y ejecútalo encima. Al abrir, el programa aplica solo las migraciones y los permisos nuevos y antes hace un respaldo del día.
+- **Versión portátil:** descomprime `Inventario-portatil.zip` en cualquier carpeta y ejecuta `Inventario.exe`.
+- Si el programa no abre, revisa `error.log` en la carpeta de datos.
+- Comandos de mantenimiento con el programa instalado: desde una terminal, `Inventario.exe --salud` o `--respaldo` (sin ventana de consola no muestran texto; el resultado queda en el respaldo o en la bitácora).
+
+## Instalación manual en Windows (con Python)
 
 1. **Instala Python** desde <https://www.python.org/downloads/>. En el instalador marca **«Add python.exe to PATH»**.
 2. **Descarga el proyecto:** en GitHub pulsa *Code → Download ZIP* y descomprímelo (por ejemplo en `C:\inventario`), o clónalo con `git clone`.
@@ -45,7 +61,7 @@ Pensada para negocios como accesorios de auto, instalación, polarizado y lavado
    python seed.py
    ```
 
-6. **Abre la aplicación:** `python main.py`.
+6. **Abre la aplicación:** `python main.py`. Desde la fase 7f, al abrir se aplican solas las migraciones pendientes; si no hay usuarios, la ventana ofrece crear el administrador (equivale a `seed.py`).
 
 En Linux y macOS es igual, pero se activa el entorno con `source venv/bin/activate` y se copia con `cp .env.example .env`.
 
@@ -138,6 +154,7 @@ python main.py --salud                          # revisa la base y que el stock 
 | `RESPALDO_AUTOMATICO` | Respaldo diario al abrir | `true` |
 | `CARPETA_RESPALDOS` | Dónde se guardan los respaldos | `respaldos` |
 | `CARPETA_FOTOS` | Dónde se guardan las fotos de producto | `fotos` |
+| `INVENTARIO_DATOS` | Solo con el programa instalado: carpeta de datos | `%LOCALAPPDATA%\Inventario` |
 
 Para mostrar tu logo guarda el archivo como `assets/logo.png` (alto recomendado: 120 px o más); si no existe solo se muestra el nombre.
 

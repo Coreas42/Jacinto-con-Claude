@@ -13,7 +13,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-from app.config import RAIZ_PROYECTO, cargar_configuracion
+from app.config import DIRECTORIO_DATOS, cargar_configuracion
 from app.servicios.errores import ErrorDeNegocio
 
 PREFIJO = "respaldo_"
@@ -24,7 +24,7 @@ CONSERVAR_POR_DEFECTO = 14
 def carpeta_de_respaldos(carpeta: str | Path | None = None) -> Path:
     if carpeta is not None:
         return Path(carpeta)
-    return Path(os.getenv("CARPETA_RESPALDOS") or RAIZ_PROYECTO / "respaldos")
+    return Path(os.getenv("CARPETA_RESPALDOS") or DIRECTORIO_DATOS / "respaldos")
 
 
 def archivo_de_la_base(url: str | None = None) -> Path:

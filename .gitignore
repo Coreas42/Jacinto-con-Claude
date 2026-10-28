@@ -11,3 +11,8 @@ respaldos/
 .idea/
 .vscode/
 fotos/
+autoprueba.txt
+error.log
+build/
+dist/
+salida/

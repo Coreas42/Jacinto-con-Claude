@@ -10,12 +10,12 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, text
 
 from app import __version__
-from app.config import RAIZ_PROYECTO
+from app.config import RAIZ_PROYECTO, RUTA_MIGRACIONES
 
 
 def _cabeza_de_migraciones() -> str | None:
     config = AlembicConfig(str(RAIZ_PROYECTO / "alembic.ini"))
-    config.set_main_option("script_location", str(RAIZ_PROYECTO / "alembic"))
+    config.set_main_option("script_location", str(RUTA_MIGRACIONES))
     return ScriptDirectory.from_config(config).get_current_head()
 
 

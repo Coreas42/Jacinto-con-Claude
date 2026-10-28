@@ -1,0 +1,71 @@
+name: Instalador
+
+# Construye el programa de Windows (.exe). Se lanza a mano: Actions > Instalador > Run workflow.
+# Al terminar, descarga «Inventario-Windows» desde la sección Artifacts de la corrida.
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        shell: pwsh
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Construir el programa (PyInstaller)
+        shell: pwsh
+        run: python instalador/construir.py *> construccion.log
+        continue-on-error: true
+        id: construir
+
+      - name: Revisar la construcción
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist/Inventario/Inventario.exe)) {
+            $cola = (Get-Content construccion.log -Tail 25) -join '%0A'
+            Write-Host "::error title=Falló la construcción::$cola"
+            exit 1
+          }
+
+      - name: Prueba de humo del programa empaquetado
+        shell: pwsh
+        run: |
+          $datos = Join-Path $env:RUNNER_TEMP "datos_prueba"
+          $env:INVENTARIO_DATOS = $datos
+          $p = Start-Process -FilePath "dist/Inventario/Inventario.exe" -ArgumentList "--autoprueba" -Wait -PassThru
+          $informe = Join-Path $datos "autoprueba.txt"
+          $texto = if (Test-Path $informe) { (Get-Content $informe) -join '%0A' } else { "No se generó autoprueba.txt" }
+          if ($p.ExitCode -ne 0) {
+            Write-Host "::error title=Falló la prueba de humo::$texto"
+            exit 1
+          }
+          Write-Host $texto
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Crear el instalador y el .zip portátil
+        shell: pwsh
+        run: |
+          $version = python -c "from app import __version__; print(__version__)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersionApp=$version" instalador/Inventario.iss
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=Falló Inno Setup::código $LASTEXITCODE"; exit 1 }
+          Compress-Archive -Path dist/Inventario -DestinationPath salida/Inventario-portatil.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Inventario-Windows
+          path: |
+            salida/Instalador-Inventario.exe
+            salida/Inventario-portatil.zip
