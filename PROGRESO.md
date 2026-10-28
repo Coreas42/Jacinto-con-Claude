@@ -1,7 +1,7 @@
 # PROGRESO
 
-**Fase actual:** 3 (Inventario y kardex) — código subido a la rama `fase-3-inventario-kardex`; pruebas pendientes de correr en GitHub Actions.
-**Fecha:** 2026-10-20
+**Fase actual:** 6c (documentación) — código subido a la rama `fase-6c-documentacion`.
+**Fecha:** 2026-10-24
 
 ## Diagnóstico acordado
 
@@ -122,9 +122,24 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - **Paginación:** el historial de ventas muestra 25 por página (`listar_ventas(..., desplazamiento=)`).
 - **Revisión de seguridad hecha:** contraseñas con argon2, permisos comprobados en servicios (no solo en la interfaz), vendedor limitado a sus ventas, CSV protegido contra fórmulas, auditoría de eventos sensibles, ventas y gastos sin borrado. Pendientes conscientes: no hay cierre de sesión por inactividad; los archivos de respaldo no van cifrados (guárdalos en un lugar seguro); `.env` y `*.db` están fuera de Git.
 
+## Configuración e inactividad (Fase 7a)
+
+- `servicios/configuracion.py` guarda parámetros en la tabla `configuracion` (sin migración nueva): `nombre_empresa`, `eslogan` (si no hay valor guardado se usa el `.env`) e `inactividad_minutos` (por defecto 15; 0 = nunca; máximo 480). Cambios auditados como `configuracion_cambiada` (valor anterior y nuevo).
+- Permiso nuevo `configuracion` (`ver`, `editar`), solo administrador. En una instalación existente: `python seed.py` (crea el permiso y se lo da al administrador).
+- Cierre por inactividad en `ui/aplicacion.py`: cualquier tecla, mouse o clic reinicia el reloj; revisa cada 10 s; al vencer cierra la sesión (`logout` + `sesion_expirada` en bitácora) y el login avisa. La lógica pura es `sesion_expirada`. Una venta sin cobrar en la caja se pierde.
+
+## Fotos de producto (Fase 7b)
+
+- Migración `0008`: `productos.foto` (nombre de archivo, no la imagen). La imagen se copia a `fotos/` (`CARPETA_FOTOS`), reducida a 800 px y convertida a JPEG; el original no se toca. Formatos: PNG, JPG, GIF, BMP, WEBP; máximo 10 MB; se valida con Pillow. Pillow 11.0.0 ahora está en `requirements.txt`.
+- `servicios/fotos.py`: `asignar_foto` y `quitar_foto` (permiso `productos.editar`, auditados como `foto_asignada` / `foto_quitada`; reemplazar o quitar borra el archivo anterior) y `rutas_de_fotos` (`productos.ver`; omite archivos que ya no existen). `foto` NO se agregó a `_a_dict` para no alterar el contrato del catálogo.
+- Pantalla Productos: columna de miniatura y, en el diálogo, vista previa con «Elegir foto…» y «Quitar foto». Al crear, la foto se guarda en la misma transacción que el producto.
+- `fotos/` está en `.gitignore`: **respáldala junto con `respaldos/`** (el respaldo de la base no incluye las imágenes).
+- Actualizar: `pip install -r requirements.txt` y `python main.py --migrar`.
+- Pendiente consciente: la caja aún no muestra fotos.
+
 ## Dependencias
 
-SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
+SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
 
 ## Estado de pruebas
 
@@ -139,7 +154,8 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 - Fase 5.5: unida a `main` (PR #6), pruebas en verde.
 - Fase 6a (servicios): `tests/test_fase6a.py` escrita (9 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6a-servicios`.
 - Fase 6a: unida a `main` (PR #8), pruebas en verde.
-- Fase 6b: `tests/test_fase6b.py` escrita (unas 22 pruebas); el código compila. **No se pudo ejecutar en la sesión de construcción**. Correr "Run workflow" en Actions sobre la rama `fase-6b-costos-respaldo` (si falla, el motivo aparece en las anotaciones de la corrida).
+- Fase 6b: unida a `main`, pruebas en verde.
+- Fase 6c: prueba nueva en `tests/test_seed.py` (seed sin ejemplos). Correr "Run workflow" sobre la rama `fase-6c-documentacion`.
 - Las pantallas de CustomTkinter no tienen pruebas automáticas: hay que probarlas a mano (login, encabezado y reloj, menú, inicio, usuarios, permisos, bitácora, productos, inventario, clientes, proveedores, gastos, caja, historial de ventas y reportes).
 
 ## Fases planificadas
@@ -154,9 +170,15 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 | 5 | Histórico y reportes | Unida a `main` (PR #5) |
 | 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Unida a `main` (PR #6) |
 | 6a | Servicios sin stock (polarizado, instalación, car wash) | Unida a `main` (PR #8) |
-| 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Código subido a rama, pruebas por correr |
-| 6c | Dockerfile, README completo, guía de GitHub | Pendiente |
+| 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Unida a `main` |
+| 6c | Dockerfile, README completo, guía de GitHub, `SEMBRAR_EJEMPLOS` | Código subido a rama |
+
+## Documentación (Fase 6c)
+
+- `README.md` completo (instalación en Windows, roles, flujos, respaldos, actualización, configuración, seguridad, PostgreSQL, Docker, problemas comunes) y `docs/GUIA_GITHUB.md`.
+- `SEMBRAR_EJEMPLOS=false` en `.env` hace que `seed.py` no cree productos ni stock de muestra (`sembrar(..., con_ejemplos=False)`).
+- `Dockerfile` (python:3.12-bookworm) y `.dockerignore`: solo para pruebas y comandos; la ventana no corre en contenedor. **No probado** en la sesión de construcción.
 
 ## Siguiente paso
 
-Fase 6c: Dockerfile (para pruebas y comandos; la ventana de escritorio no corre en contenedor), README completo (instalación en Windows, uso por rol, respaldos, actualización de versiones) y guía de GitHub paso a paso.
+Fase 7c (pagos mixtos y devoluciones), 7d (PEPS) y 7e (respaldos cifrados). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).

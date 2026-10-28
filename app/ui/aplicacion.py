@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from dataclasses import replace
 from datetime import datetime
 
 import customtkinter as ctk
@@ -18,6 +20,7 @@ from app.servicios.autenticacion import (
     datos_de_sesion,
     iniciar_sesion,
 )
+from app.servicios.configuracion import registrar_expiracion, sesion_expirada, valores_actuales
 from app.servicios.errores import ErrorDeNegocio
 from app.ui import tema
 
@@ -33,6 +36,14 @@ class Aplicacion(ctk.CTk):
         self.fabrica = crear_fabrica_sesiones(motor)
         self.configuracion = cargar_configuracion()
         self.usuario: SesionUsuario | None = None
+        self.principal: PantallaPrincipal | None = None
+        self.inactividad_minutos = 0
+        self.aviso_login = ""
+        self._ultima_actividad = time.monotonic()
+        self._cargar_valores_guardados()
+        for evento in ("<Key>", "<Motion>", "<ButtonPress>", "<MouseWheel>"):
+            self.bind_all(evento, self._registrar_actividad, add="+")
+        self.after(10_000, self._vigilar_inactividad)
 
         self.title(f"{self.configuracion.nombre_empresa} · Inventario y ventas")
         self.geometry("1280x780")
@@ -51,7 +62,39 @@ class Aplicacion(ctk.CTk):
 
     def mostrar_principal(self) -> None:
         self._limpiar()
-        PantallaPrincipal(self).pack(fill="both", expand=True)
+        self.principal = PantallaPrincipal(self)
+        self.principal.pack(fill="both", expand=True)
+
+    # ---- configuración guardada e inactividad ---------------------------------------
+
+    def _cargar_valores_guardados(self) -> None:
+        try:
+            with sesion_transaccional(self.fabrica) as sesion:
+                valores = valores_actuales(sesion)
+        except Exception:  # noqa: BLE001 - sin base lista, la pantalla de login lo informa
+            return
+        self.configuracion = replace(
+            self.configuracion, nombre_empresa=valores["nombre_empresa"], eslogan=valores["eslogan"]
+        )
+        self.inactividad_minutos = valores["inactividad_minutos"]
+        self.title(f"{self.configuracion.nombre_empresa} · Inventario y ventas")
+
+    def aplicar_configuracion(self) -> None:
+        """Relee la configuración guardada y reconstruye la pantalla principal (nombre en el encabezado)."""
+        self._cargar_valores_guardados()
+        self.mostrar_principal()
+        if self.principal is not None and "configuracion" in self.principal.botones:
+            self.principal.mostrar_modulo("configuracion")
+
+    def _registrar_actividad(self, _evento: object = None) -> None:
+        self._ultima_actividad = time.monotonic()
+
+    def _vigilar_inactividad(self) -> None:
+        self.after(10_000, self._vigilar_inactividad)
+        if self.usuario is None:
+            return
+        if sesion_expirada(time.monotonic() - self._ultima_actividad, self.inactividad_minutos):
+            self.salir(por_inactividad=True)
 
     # ---- acciones -------------------------------------------------------------------
 
@@ -60,13 +103,20 @@ class Aplicacion(ctk.CTk):
         with sesion_transaccional(self.fabrica) as sesion:
             usuario = iniciar_sesion(sesion, correo, clave)
             self.usuario = datos_de_sesion(sesion, usuario)
+        self._cargar_valores_guardados()
+        self._ultima_actividad = time.monotonic()
+        self.aviso_login = ""
         self.mostrar_principal()
 
-    def salir(self) -> None:
+    def salir(self, por_inactividad: bool = False) -> None:
         if self.usuario is not None:
             with sesion_transaccional(self.fabrica) as sesion:
                 cerrar_sesion(sesion, self.usuario.id)
+                if por_inactividad:
+                    registrar_expiracion(sesion, self.usuario.id, self.inactividad_minutos)
         self.usuario = None
+        self.principal = None
+        self.aviso_login = "Sesión cerrada por inactividad." if por_inactividad else ""
         self.mostrar_login()
 
     def hay_usuarios(self) -> bool:
@@ -98,6 +148,8 @@ class PantallaLogin(ctk.CTkFrame):
         ctk.CTkButton(self, text="Entrar", width=300, command=self.entrar).pack(pady=12)
 
         self._mostrar_estado_del_sistema()
+        if app.aviso_login:
+            self.mensaje.configure(text=app.aviso_login, text_color=tema.NARANJA)
         self.correo.focus()
 
     def _mostrar_estado_del_sistema(self) -> None:
@@ -131,6 +183,7 @@ MENU = [
     ("reportes", "📊", "Reportes", "reportes"),
     ("usuarios", "🔐", "Usuarios", "usuarios"),
     ("bitacora", "📜", "Bitácora", "bitacora"),
+    ("configuracion", "⚙️", "Configuración", "configuracion"),
 ]
 
 
@@ -276,6 +329,10 @@ class PantallaPrincipal(ctk.CTkFrame):
             from app.ui.bitacora_pantalla import PantallaBitacora
 
             pantalla = PantallaBitacora(self.contenido, self.app)
+        elif modulo == "configuracion":
+            from app.ui.configuracion_pantalla import PantallaConfiguracion
+
+            pantalla = PantallaConfiguracion(self.contenido, self.app)
         else:
             return
         pantalla.pack(fill="both", expand=True)
