@@ -392,3 +392,28 @@ def test_las_matrices_incluyen_los_permisos_de_ventas():
     assert MATRIZ_BASE["vendedor"]["ventas"] == ["ver", "crear"]
     assert "anular" not in MATRIZ_BASE["vendedor"]["ventas"]
     assert "ver_todas" in MATRIZ_BASE["contador"]["ventas"]
+
+
+def test_catalogo_para_venta_lista_por_categoria_y_respeta_permiso(sesion_servicios, administrador, crear_con_rol):
+    from app.servicios.catalogo import crear_categoria, crear_producto
+    from app.servicios.errores import PermisoDenegado
+    from app.servicios.inventario import crear_sucursal
+    from app.servicios.ventas import catalogo_para_venta, categorias_para_venta
+
+    s = sesion_servicios
+    sucursal = crear_sucursal(s, administrador, "Cat Sucursal")
+    c1 = crear_categoria(s, administrador, "CatUno")
+    c2 = crear_categoria(s, administrador, "CatDos")
+    crear_categoria(s, administrador, "CatVacia")
+    crear_producto(s, administrador, sku="CAT-A", nombre="Alfombra", categoria_id=c1.id, precio="10", costo="4")
+    crear_producto(s, administrador, sku="CAT-B", nombre="Brillo", categoria_id=c2.id, precio="5", costo="2")
+    s.commit()
+
+    todos = catalogo_para_venta(s, administrador, sucursal.id)
+    assert [p["sku"] for p in todos] == ["CAT-A", "CAT-B"]
+    assert [p["sku"] for p in catalogo_para_venta(s, administrador, sucursal.id, c2.id)] == ["CAT-B"]
+    assert [c["nombre"] for c in categorias_para_venta(s, administrador)] == ["CatDos", "CatUno"]
+
+    bodeguero = crear_con_rol("bodeguero")  # no tiene ventas.crear
+    with pytest.raises(PermisoDenegado):
+        catalogo_para_venta(s, bodeguero, sucursal.id)

@@ -19,10 +19,13 @@ from app.servicios.comprobante import comprobante_html, comprobante_texto
 from app.servicios.errores import ErrorDeNegocio
 from app.servicios.inventario import listar_sucursales
 from app.servicios.usuarios import obtener_usuario
+from app.ui import tema
 from app.servicios.ventas import (
     METODOS_PAGO,
     anular_venta,
     buscar_para_venta,
+    catalogo_para_venta,
+    categorias_para_venta,
     crear_cliente,
     listar_clientes,
     listar_ventas,
@@ -35,6 +38,7 @@ ROJO = "#d64545"
 VERDE = "#2e9e5b"
 NARANJA = "#d98a00"
 CONSUMIDOR_FINAL = "Consumidor final"
+TODAS_CATEGORIAS = "Todas"
 TAMANO_PAGINA = 25
 
 
@@ -86,6 +90,11 @@ class PantallaVentas(ctk.CTkFrame):
     def _cargar_sucursales(self) -> None:
         ok, sucursales = self.ejecutar(lambda s, a: listar_sucursales(s, a))
         self.sucursales = sucursales if ok else []
+        if self.puede_crear:
+            nombres = [s["nombre"] for s in self.sucursales] or ["—"]
+            actual = self.caja_sucursal.get()
+            self.caja_sucursal.configure(values=nombres)
+            self.caja_sucursal.set(actual if actual in nombres else nombres[0])
 
     def _cargar_clientes(self) -> None:
         ok, clientes = self.ejecutar(lambda s, a: listar_clientes(s, a))
@@ -107,7 +116,9 @@ class PantallaVentas(ctk.CTkFrame):
         barra = ctk.CTkFrame(marco, fg_color="transparent")
         barra.pack(fill="x", pady=(4, 6))
         ctk.CTkLabel(barra, text="Sucursal:").pack(side="left")
-        self.caja_sucursal = ctk.CTkOptionMenu(barra, values=["—"], width=160)
+        self.caja_sucursal = ctk.CTkOptionMenu(
+            barra, values=["—"], width=160, command=lambda _v: self._sucursal_cambiada()
+        )
         self.caja_sucursal.pack(side="left", padx=(6, 14))
         self.caja_codigo = ctk.CTkEntry(
             barra, width=300, placeholder_text="Escanea el código o escribe SKU / nombre y pulsa Enter"
@@ -115,9 +126,27 @@ class PantallaVentas(ctk.CTkFrame):
         self.caja_codigo.pack(side="left")
         self.caja_codigo.bind("<Return>", lambda _e: self.agregar_por_texto())
         ctk.CTkButton(barra, text="Agregar", width=80, command=self.agregar_por_texto).pack(side="left", padx=6)
+        self.boton_catalogo = ctk.CTkButton(
+            barra, text="📋 Catálogo", width=110, fg_color=tema.SUPERFICIE_2, command=self._alternar_catalogo
+        )
+        self.boton_catalogo.pack(side="left")
 
         self.resultados = ctk.CTkFrame(marco, fg_color="transparent")
         self.resultados.pack(fill="x")
+
+        # Catálogo: elegir productos con un clic (oculto hasta pulsar «Catálogo»).
+        self.panel_catalogo = ctk.CTkFrame(marco, fg_color=tema.SUPERFICIE, border_width=1, border_color=tema.BORDE)
+        filtro = ctk.CTkFrame(self.panel_catalogo, fg_color="transparent")
+        filtro.pack(fill="x", padx=8, pady=(6, 2))
+        ctk.CTkLabel(filtro, text="Categoría:").pack(side="left")
+        self.catalogo_categoria = ctk.CTkOptionMenu(
+            filtro, values=[TODAS_CATEGORIAS], width=170, command=lambda _v: self._pintar_catalogo()
+        )
+        self.catalogo_categoria.pack(side="left", padx=6)
+        ctk.CTkLabel(filtro, text="Un clic agrega una unidad al carrito.", text_color=tema.TEXTO_SUAVE).pack(side="left", padx=10)
+        self.catalogo_lista = ctk.CTkScrollableFrame(self.panel_catalogo, height=170, fg_color="transparent")
+        self.catalogo_lista.pack(fill="x", padx=6, pady=(0, 6))
+        self.categorias_catalogo: list[dict] = []
 
         self.lista_carrito = ctk.CTkScrollableFrame(marco, height=260)
         self.lista_carrito.pack(fill="both", expand=True, pady=6)
@@ -146,6 +175,51 @@ class PantallaVentas(ctk.CTkFrame):
         ).pack(side="right", padx=8)
 
         self._pintar_carrito()
+
+    def _sucursal_cambiada(self) -> None:
+        if self.panel_catalogo.winfo_ismapped():
+            self._pintar_catalogo()
+
+    def _alternar_catalogo(self) -> None:
+        if self.panel_catalogo.winfo_ismapped():
+            self.panel_catalogo.pack_forget()
+            return
+        self.panel_catalogo.pack(fill="x", pady=(0, 4), before=self.lista_carrito)
+        ok, categorias = self.ejecutar(lambda s, a: categorias_para_venta(s, a))
+        self.categorias_catalogo = categorias if ok else []
+        nombres = [TODAS_CATEGORIAS] + [c["nombre"] for c in self.categorias_catalogo]
+        actual = self.catalogo_categoria.get()
+        self.catalogo_categoria.configure(values=nombres)
+        self.catalogo_categoria.set(actual if actual in nombres else TODAS_CATEGORIAS)
+        self._pintar_catalogo()
+
+    def _pintar_catalogo(self) -> None:
+        sucursal = self._sucursal_id()
+        for widget in self.catalogo_lista.winfo_children():
+            widget.destroy()
+        if sucursal is None:
+            return
+        categoria = next((c["id"] for c in self.categorias_catalogo if c["nombre"] == self.catalogo_categoria.get()), None)
+        ok, productos = self.ejecutar(lambda s, a: catalogo_para_venta(s, a, sucursal, categoria))
+        if not ok:
+            return
+        if not productos:
+            ctk.CTkLabel(self.catalogo_lista, text="No hay productos en esta categoría.", text_color=tema.TEXTO_SUAVE).pack(pady=12)
+            return
+        columnas = 3
+        for c in range(columnas):
+            self.catalogo_lista.grid_columnconfigure(c, weight=1, uniform="cat")
+        for i, p in enumerate(productos):
+            stock = "servicio" if p["stock"] is None else f"stock {p['stock']}"
+            agotado = p["stock"] is not None and p["stock"] <= 0
+            ctk.CTkButton(
+                self.catalogo_lista, text=f"{p['nombre']}\n{p['precio']:,.2f} · {stock}", height=46,
+                fg_color=tema.SUPERFICIE_2, hover_color=tema.ACENTO, text_color=tema.ROJO if agotado else tema.TEXTO,
+                command=lambda x=p: self._agregar_desde_catalogo(x),
+            ).grid(row=i // columnas, column=i % columnas, padx=3, pady=3, sticky="ew")
+
+    def _agregar_desde_catalogo(self, producto: dict) -> None:
+        self.agregar_al_carrito(producto)
 
     def agregar_por_texto(self) -> None:
         texto = self.caja_codigo.get().strip()
