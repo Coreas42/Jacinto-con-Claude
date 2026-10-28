@@ -41,6 +41,8 @@ class Producto(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     # Servicio (polarizado, instalación...): se vende sin controlar existencias.
     es_servicio: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Nombre del archivo dentro de la carpeta de fotos (no la imagen en sí).
+    foto: Mapped[str | None] = mapped_column(String(120))
     creado_en: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     categoria: Mapped[Categoria] = relationship()

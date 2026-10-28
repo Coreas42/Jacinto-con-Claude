@@ -17,7 +17,32 @@ from app.servicios.catalogo import (
     listar_categorias,
 )
 from app.servicios.errores import ErrorDeNegocio
+from app.servicios.fotos import asignar_foto, quitar_foto, rutas_de_fotos
 from app.servicios.usuarios import obtener_usuario
+from app.ui import tema
+
+_CACHE_MINIATURAS: dict[tuple[str, int], Any] = {}
+
+
+def imagen_de(ruta: Any, lado: int) -> Any:
+    """CTkImage cuadrada (con proporción conservada) o ``None`` si no se puede abrir."""
+    clave = (str(ruta), lado)
+    if clave in _CACHE_MINIATURAS:
+        return _CACHE_MINIATURAS[clave]
+    try:
+        from PIL import Image
+
+        with Image.open(ruta) as original:
+            imagen = original.copy()
+        imagen.thumbnail((lado * 2, lado * 2))
+        ancho = max(1, round(imagen.width * lado / max(imagen.size)))
+        alto = max(1, round(imagen.height * lado / max(imagen.size)))
+        resultado = ctk.CTkImage(light_image=imagen, dark_image=imagen, size=(ancho, alto))
+    except Exception:  # noqa: BLE001
+        resultado = None
+    _CACHE_MINIATURAS[clave] = resultado
+    return resultado
+
 
 ROJO = "#d64545"
 VERDE = "#2e9e5b"
@@ -112,16 +137,24 @@ class PantallaProductos(ctk.CTkFrame):
             return
 
         negrita = ctk.CTkFont(weight="bold")
-        titulos = ["SKU", "Nombre", "Categoría", "Costo", "Precio", "Mínimo", "Estado", ""]
+        fotos: dict = {}
+        if filas:
+            _, fotos = self.ejecutar(lambda s, a: rutas_de_fotos(s, a, [f["id"] for f in filas]))
+            fotos = fotos or {}
+        titulos = ["Foto", "SKU", "Nombre", "Categoría", "Costo", "Precio", "Mínimo", "Estado", ""]
         for columna, titulo in enumerate(titulos):
             ctk.CTkLabel(self.lista, text=titulo, font=negrita).grid(
                 row=0, column=columna, padx=8, pady=4, sticky="w"
             )
         if not filas:
             ctk.CTkLabel(self.lista, text="No hay productos que coincidan.", text_color="gray").grid(
-                row=1, column=0, columnspan=8, pady=20
+                row=1, column=0, columnspan=9, pady=20
             )
         for fila, p in enumerate(filas, start=1):
+            miniatura = imagen_de(fotos[p["id"]], 40) if p["id"] in fotos else None
+            ctk.CTkLabel(self.lista, text="" if miniatura else "—", image=miniatura, width=44, text_color="gray").grid(
+                row=fila, column=0, padx=8, pady=2
+            )
             textos = [
                 p["sku"],
                 p["nombre"] + ("  · servicio" if p["es_servicio"] else ""),
@@ -130,18 +163,18 @@ class PantallaProductos(ctk.CTkFrame):
                 _dinero(p["precio"]),
                 "—" if p["es_servicio"] else str(p["stock_minimo"]),
             ]
-            for columna, texto in enumerate(textos):
+            for columna, texto in enumerate(textos, start=1):
                 ctk.CTkLabel(self.lista, text=texto).grid(
-                    row=fila, column=columna, padx=8, pady=2, sticky="w" if columna < 3 else "e"
+                    row=fila, column=columna, padx=8, pady=2, sticky="w" if columna < 4 else "e"
                 )
             ctk.CTkLabel(
                 self.lista,
                 text="Activo" if p["activo"] else "Inactivo",
                 text_color=VERDE if p["activo"] else ROJO,
-            ).grid(row=fila, column=6, padx=8, sticky="w")
+            ).grid(row=fila, column=7, padx=8, sticky="w")
 
             acciones = ctk.CTkFrame(self.lista, fg_color="transparent")
-            acciones.grid(row=fila, column=7, padx=8, sticky="w")
+            acciones.grid(row=fila, column=8, padx=8, sticky="w")
             ctk.CTkButton(acciones, text="Historial", width=70, command=lambda x=p: DialogoHistorial(self, x)).pack(
                 side="left", padx=2
             )
@@ -225,8 +258,9 @@ class DialogoProducto(_Dialogo):
     ]
 
     def __init__(self, pantalla: PantallaProductos, producto: dict | None) -> None:
-        super().__init__(pantalla, "Editar producto" if producto else "Nuevo producto", "460x660")
+        super().__init__(pantalla, "Editar producto" if producto else "Nuevo producto", "460x790")
         self.producto = producto
+        self.foto_pendiente: str | None = None
         self.entradas: dict[str, ctk.CTkEntry] = {}
 
         marco = ctk.CTkFrame(self, fg_color="transparent")
@@ -273,7 +307,57 @@ class DialogoProducto(_Dialogo):
             self.entradas["costo"].insert(0, "0")
             self.entradas["stock_minimo"].insert(0, "0")
 
+        self._armar_foto(marco, len(self.CAMPOS) + 2)
         ctk.CTkButton(self, text="Guardar", command=self.guardar).pack(pady=(0, 18))
+
+    # ---- foto -----------------------------------------------------------------------
+
+    def _armar_foto(self, marco: Any, fila: int) -> None:
+        self.vista_foto = ctk.CTkLabel(marco, text="Sin foto", width=170, height=120, fg_color=tema.SUPERFICIE_2, corner_radius=8)
+        self.vista_foto.grid(row=fila, column=0, columnspan=2, pady=(12, 4))
+        botones = ctk.CTkFrame(marco, fg_color="transparent")
+        botones.grid(row=fila + 1, column=0, columnspan=2)
+        self.puede_foto = self.pantalla.puede_editar
+        if self.puede_foto:
+            ctk.CTkButton(botones, text="Elegir foto…", width=110, command=self._elegir_foto).pack(side="left", padx=4)
+            ctk.CTkButton(botones, text="Quitar foto", width=100, fg_color="gray40", command=self._quitar_foto).pack(side="left", padx=4)
+        if self.producto is not None:
+            _, rutas = self.pantalla.ejecutar(lambda s, a: rutas_de_fotos(s, a, [self.producto["id"]]))
+            if rutas and self.producto["id"] in rutas:
+                self._mostrar_foto(rutas[self.producto["id"]])
+
+    def _mostrar_foto(self, ruta: Any) -> None:
+        imagen = imagen_de(ruta, 110)
+        self.vista_foto.configure(image=imagen, text="" if imagen else "No se pudo mostrar")
+        self.vista_foto.image = imagen
+
+    def _elegir_foto(self) -> None:
+        from tkinter import filedialog
+
+        ruta = filedialog.askopenfilename(
+            parent=self, title="Elegir foto", filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp *.webp")]
+        )
+        if not ruta:
+            return
+        if self.producto is None:  # aún no existe: se guarda junto con el producto
+            self.foto_pendiente = ruta
+            self._mostrar_foto(ruta)
+            return
+        ok, nombre = self.pantalla.ejecutar(lambda s, a: asignar_foto(s, a, self.producto["id"], ruta), exito="Foto guardada.")
+        if ok:
+            _, rutas = self.pantalla.ejecutar(lambda s, a: rutas_de_fotos(s, a, [self.producto["id"]]))
+            if rutas and self.producto["id"] in rutas:
+                self._mostrar_foto(rutas[self.producto["id"]])
+            self.pantalla.recargar()
+
+    def _quitar_foto(self) -> None:
+        self.foto_pendiente = None
+        self.vista_foto.configure(image=None, text="Sin foto")
+        self.vista_foto.image = None
+        if self.producto is not None:
+            ok, _ = self.pantalla.ejecutar(lambda s, a: quitar_foto(s, a, self.producto["id"]), exito="Foto quitada.")
+            if ok:
+                self.pantalla.recargar()
 
     def _alternar_servicio(self) -> None:
         """Un servicio no maneja existencias: el stock mínimo no aplica."""
@@ -291,8 +375,8 @@ class DialogoProducto(_Dialogo):
     def guardar(self) -> None:
         datos = {clave: entrada.get() for clave, entrada in self.entradas.items()}
         if self.producto is None:
-            ok, _ = self.pantalla.ejecutar(
-                lambda s, a: crear_producto(
+            def crear(s: Any, a: Any) -> None:
+                nuevo = crear_producto(
                     s,
                     a,
                     sku=datos["sku"],
@@ -305,7 +389,12 @@ class DialogoProducto(_Dialogo):
                     descripcion=datos["descripcion"],
                     marca=datos["marca"],
                     es_servicio=bool(self.es_servicio.get()),
-                ),
+                )
+                if self.foto_pendiente:  # misma transacción: si la foto falla, no se crea el producto
+                    asignar_foto(s, a, nuevo.id, self.foto_pendiente)
+
+            ok, _ = self.pantalla.ejecutar(
+                crear,
                 exito="Producto creado.",
             )
         else:
