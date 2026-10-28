@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import RAIZ_PROYECTO
+from app.config import DIRECTORIO_DATOS
 from app.modelos import Producto, Usuario
 from app.servicios.auditoria import registrar
 from app.servicios.errores import ErrorDeNegocio
@@ -27,7 +27,7 @@ EXTENSIONES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
 def carpeta_fotos() -> Path:
     destino = Path(os.getenv("CARPETA_FOTOS", "fotos"))
-    return destino if destino.is_absolute() else RAIZ_PROYECTO / destino
+    return destino if destino.is_absolute() else DIRECTORIO_DATOS / destino
 
 
 def _producto(sesion: Session, producto_id: int) -> Producto:

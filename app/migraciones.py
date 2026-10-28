@@ -5,12 +5,12 @@ from __future__ import annotations
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
-from app.config import RAIZ_PROYECTO, cargar_configuracion
+from app.config import RAIZ_PROYECTO, RUTA_MIGRACIONES, cargar_configuracion
 
 
 def _config_alembic(url: str | None = None) -> AlembicConfig:
     config = AlembicConfig(str(RAIZ_PROYECTO / "alembic.ini"))
-    config.set_main_option("script_location", str(RAIZ_PROYECTO / "alembic"))
+    config.set_main_option("script_location", str(RUTA_MIGRACIONES))
     # Los % deben escaparse para el interpolador de configparser.
     url = (url or cargar_configuracion().database_url).replace("%", "%%")
     config.set_main_option("sqlalchemy.url", url)

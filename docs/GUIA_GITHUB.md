@@ -50,6 +50,10 @@ El flujo **Pruebas** es manual:
 
 Corre en Python 3.11 y 3.12: ejecuta `pytest`, luego `python main.py --migrar` y `--salud`.
 
+## 4b. Construir el instalador de Windows
+
+**Actions → Instalador → Run workflow → rama `main`.** Tarda varios minutos. Al terminar, en **Artifacts** descarga `Inventario-Windows`. Si falla, el motivo aparece en las anotaciones (cuadros rojos) arriba del resumen: PyInstaller, la prueba de humo del programa empaquetado o Inno Setup.
+
 ## 5. Si una prueba falla
 
 Abre la corrida fallida y entra al trabajo (*job*). Los fallos aparecen como **anotaciones** (cuadros rojos) arriba del resumen, con el nombre de la prueba y el motivo. Copia ese texto o toma una captura y compártelo para corregirlo.
