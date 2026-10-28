@@ -128,9 +128,18 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - Permiso nuevo `configuracion` (`ver`, `editar`), solo administrador. En una instalación existente: `python seed.py` (crea el permiso y se lo da al administrador).
 - Cierre por inactividad en `ui/aplicacion.py`: cualquier tecla, mouse o clic reinicia el reloj; revisa cada 10 s; al vencer cierra la sesión (`logout` + `sesion_expirada` en bitácora) y el login avisa. La lógica pura es `sesion_expirada`. Una venta sin cobrar en la caja se pierde.
 
+## Fotos de producto (Fase 7b)
+
+- Migración `0008`: `productos.foto` (nombre de archivo, no la imagen). La imagen se copia a `fotos/` (`CARPETA_FOTOS`), reducida a 800 px y convertida a JPEG; el original no se toca. Formatos: PNG, JPG, GIF, BMP, WEBP; máximo 10 MB; se valida con Pillow. Pillow 11.0.0 ahora está en `requirements.txt`.
+- `servicios/fotos.py`: `asignar_foto` y `quitar_foto` (permiso `productos.editar`, auditados como `foto_asignada` / `foto_quitada`; reemplazar o quitar borra el archivo anterior) y `rutas_de_fotos` (`productos.ver`; omite archivos que ya no existen). `foto` NO se agregó a `_a_dict` para no alterar el contrato del catálogo.
+- Pantalla Productos: columna de miniatura y, en el diálogo, vista previa con «Elegir foto…» y «Quitar foto». Al crear, la foto se guarda en la misma transacción que el producto.
+- `fotos/` está en `.gitignore`: **respáldala junto con `respaldos/`** (el respaldo de la base no incluye las imágenes).
+- Actualizar: `pip install -r requirements.txt` y `python main.py --migrar`.
+- Pendiente consciente: la caja aún no muestra fotos.
+
 ## Dependencias
 
-SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
+SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
 
 ## Estado de pruebas
 
@@ -172,4 +181,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, python-dotenv 1.0.1, arg
 
 ## Siguiente paso
 
-Fase 7b (fotos de producto), luego 7c (pagos mixtos y devoluciones), 7d (PEPS) y 7e (respaldos cifrados). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).
+Fase 7c (pagos mixtos y devoluciones), 7d (PEPS) y 7e (respaldos cifrados). Decisiones tomadas: PEPS configurable (el promedio sigue disponible); cifrado opcional con clave; pagos mixtos entre las formas de pago actuales con efectivo recibido y cambio; fotos copiadas a `fotos/` con solo la ruta en la base (requiere Pillow).

@@ -10,7 +10,7 @@ Pensada para negocios como accesorios de auto, instalación, polarizado y lavado
 
 - **Inicio:** ventas y ganancia del día, productos vendidos, inventario, aviso de stock bajo, últimas ventas, más vendidos y gráfica de 7 días.
 - **Caja (ventas):** lector de código de barras, búsqueda, descuentos, cliente, forma de pago, comprobante imprimible, anulación con motivo.
-- **Productos y servicios:** SKU, código de barras, categoría, precio, costo, stock mínimo e historial de cambios.
+- **Productos y servicios:** SKU, código de barras, categoría, foto, precio, costo, stock mínimo e historial de cambios.
 - **Inventario:** compras a proveedores, mermas, ajustes, traslados entre sucursales, kardex y alertas de stock mínimo (costo promedio ponderado).
 - **Clientes, proveedores y gastos.**
 - **Reportes:** ventas por día, vendedor, producto, categoría o sucursal; inventario valorizado; resultado del periodo (ganancia bruta − gastos); exportación a CSV.
@@ -101,6 +101,7 @@ python main.py --salud                          # revisa la base y que el stock 
 ```
 
 - Al restaurar, la base actual se guarda como `antes_de_restaurar_*.db`.
+- Las **fotos** de producto viven en la carpeta `fotos/` y no van dentro del respaldo de la base: cópiala junto con `respaldos/`.
 - Los respaldos **no van cifrados**. **Copia la carpeta `respaldos/` a una memoria USB o a la nube con regularidad**: si falla el disco se pierden la base y sus respaldos.
 - Con PostgreSQL los respaldos se hacen con `pg_dump`.
 
@@ -132,6 +133,7 @@ python main.py --salud                          # revisa la base y que el stock 
 | `SEMBRAR_EJEMPLOS` | Productos y stock de muestra en `seed.py` | `true` |
 | `RESPALDO_AUTOMATICO` | Respaldo diario al abrir | `true` |
 | `CARPETA_RESPALDOS` | Dónde se guardan los respaldos | `respaldos` |
+| `CARPETA_FOTOS` | Dónde se guardan las fotos de producto | `fotos` |
 
 Para mostrar tu logo guarda el archivo como `assets/logo.png` (alto recomendado: 120 px o más); si no existe solo se muestra el nombre.
 
