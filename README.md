@@ -141,6 +141,10 @@ python main.py --salud                          # revisa la base y que el stock 
    `--migrar` actualiza las tablas y `seed.py` agrega permisos nuevos sin quitar los que personalizaste.
 5. Comprueba con `python main.py --salud` y abre la aplicación.
 
+## Costeo del inventario (PEPS o promedio)
+
+En **Configuración → Costeo del inventario** el administrador elige cómo se calcula el costo de lo que se vende: *promedio ponderado* (por defecto) o *PEPS* (se vende primero lo que entró primero, con el costo de esa compra). El cambio aplica a las ventas nuevas; las anteriores conservan su costo. En **Inventario → Capas** se ven los lotes con sus unidades y costos. Nota: el costo de cada línea se redondea a centavos por unidad.
+
 ## Configuración (`.env`)
 
 | Variable | Para qué sirve | Por defecto |

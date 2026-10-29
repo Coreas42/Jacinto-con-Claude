@@ -22,7 +22,7 @@ def test_valores_por_defecto_salen_del_entorno(sesion_servicios, monkeypatch):
     monkeypatch.setenv("NOMBRE_EMPRESA", "Taller Uno")
     monkeypatch.setenv("ESLOGAN_EMPRESA", "Autos")
     v = valores_actuales(sesion_servicios)
-    assert v == {"nombre_empresa": "Taller Uno", "eslogan": "Autos", "inactividad_minutos": 15}
+    assert v == {"nombre_empresa": "Taller Uno", "eslogan": "Autos", "inactividad_minutos": 15, "metodo_costeo": "promedio"}
 
 
 def test_guardar_cambia_valores_y_deja_bitacora(sesion_servicios, administrador):

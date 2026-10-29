@@ -11,6 +11,7 @@ from app.servicios.catalogo import obtener_por_codigo
 from app.servicios.errores import ErrorDeNegocio
 from app.servicios.inventario import (
     ajustar_stock,
+    capas_de_producto,
     crear_proveedor,
     crear_sucursal,
     existencias,
@@ -168,9 +169,10 @@ class PantallaInventario(ctk.CTkFrame):
                 text="⚠ Stock bajo" if f["bajo_minimo"] else "OK",
                 text_color=NARANJA if f["bajo_minimo"] else VERDE,
             ).grid(row=fila, column=6, padx=8, sticky="w")
-            ctk.CTkButton(
-                self.lista, text="Kardex", width=70, command=lambda x=f: DialogoKardex(self, x)
-            ).grid(row=fila, column=7, padx=8)
+            acciones = ctk.CTkFrame(self.lista, fg_color="transparent")
+            acciones.grid(row=fila, column=7, padx=8)
+            ctk.CTkButton(acciones, text="Kardex", width=70, command=lambda x=f: DialogoKardex(self, x)).pack(side="left", padx=2)
+            ctk.CTkButton(acciones, text="Capas", width=60, fg_color="gray40", command=lambda x=f: DialogoCapas(self, x)).pack(side="left", padx=2)
 
     def exportar(self) -> None:
         from tkinter import filedialog
@@ -368,6 +370,36 @@ class DialogoMovimiento(_Dialogo):
         if ok:
             self.pantalla.recargar()
             self.destroy()
+
+
+class DialogoCapas(_Dialogo):
+    """Lotes con unidades restantes y su costo, del más antiguo al más nuevo (el orden de salida con PEPS)."""
+
+    def __init__(self, pantalla: PantallaInventario, producto: dict) -> None:
+        super().__init__(pantalla, f"Capas de costo · {producto['sku']}", "760x420")
+        ctk.CTkLabel(
+            self, text=f"{producto['nombre']} · {pantalla.sucursal_nombre}", font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(12, 2))
+        ctk.CTkLabel(
+            self, text="Cada compra, devolución o ajuste positivo forma una capa. Con PEPS se vende primero la más antigua.",
+            text_color="gray", wraplength=700,
+        ).pack(pady=(0, 6))
+        texto = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Courier", size=12), wrap="none")
+        texto.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        sucursal = pantalla.sucursal_id
+        ok, capas = pantalla.ejecutar(lambda s, a: capas_de_producto(s, a, producto["producto_id"], sucursal))
+        if ok and capas:
+            texto.insert("end", f"{'Fecha (UTC)':<17} {'Origen':<17} {'Inicial':>8} {'Quedan':>7} {'Costo':>9} {'Valor':>11}\n")
+            for c in capas:
+                costo = "—" if c["costo"] is None else format(c["costo"], ".2f")
+                valor = "—" if c["valor"] is None else format(c["valor"], ",.2f")
+                texto.insert(
+                    "end",
+                    f"{c['fecha']:%Y-%m-%d %H:%M}  {c['origen']:<17} {c['cantidad_inicial']:>8} {c['restante']:>7} {costo:>9} {valor:>11}\n",
+                )
+        elif ok:
+            texto.insert("end", "No hay capas con unidades en esta sucursal.")
+        texto.configure(state="disabled")
 
 
 class DialogoKardex(_Dialogo):

@@ -25,7 +25,17 @@ CLAVES = {
     "nombre_empresa": "Nombre del negocio",
     "eslogan": "Línea bajo el nombre",
     "inactividad_minutos": "Cerrar la sesión tras estos minutos sin usar el sistema (0 = nunca)",
+    "metodo_costeo": "Cómo se calcula el costo de lo que se vende (promedio ponderado o PEPS)",
 }
+
+METODOS_COSTEO = ("promedio", "peps")
+METODO_COSTEO_POR_DEFECTO = "promedio"
+
+
+def metodo_costeo(sesion: Session) -> str:
+    """Método de costeo vigente (``promedio`` o ``peps``). No exige permiso: lo consulta el inventario."""
+    valor = sesion.scalar(select(Configuracion.valor).where(Configuracion.clave == "metodo_costeo"))
+    return valor if valor in METODOS_COSTEO else METODO_COSTEO_POR_DEFECTO
 
 INACTIVIDAD_POR_DEFECTO = 15
 
@@ -42,6 +52,7 @@ def valores_actuales(sesion: Session) -> dict[str, Any]:
         "nombre_empresa": guardados.get("nombre_empresa") or entorno.nombre_empresa,
         "eslogan": guardados["eslogan"] if "eslogan" in guardados else entorno.eslogan,
         "inactividad_minutos": max(0, min(minutos, MAXIMO_INACTIVIDAD)),
+        "metodo_costeo": guardados["metodo_costeo"] if guardados.get("metodo_costeo") in METODOS_COSTEO else METODO_COSTEO_POR_DEFECTO,
     }
 
 
@@ -71,6 +82,11 @@ def _normalizar(clave: str, valor: Any) -> Any:
         if not 0 <= minutos <= MAXIMO_INACTIVIDAD:
             raise ErrorDeNegocio(f"Los minutos de inactividad van de 0 a {MAXIMO_INACTIVIDAD}.")
         return minutos
+    if clave == "metodo_costeo":
+        metodo = str(valor or "").strip().lower()
+        if metodo not in METODOS_COSTEO:
+            raise ErrorDeNegocio("El método de costeo debe ser «promedio» o «peps».")
+        return metodo
     raise ErrorDeNegocio(f"Parámetro desconocido: {clave}")
 
 

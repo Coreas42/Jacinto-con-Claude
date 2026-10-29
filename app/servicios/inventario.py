@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.modelos import (
+    CapaCosto,
     Compra,
     CompraDetalle,
     Existencia,
@@ -36,6 +37,7 @@ from app.modelos import (
 )
 from app.servicios.auditoria import registrar
 from app.servicios.catalogo import a_dinero, actualizar_costo_promedio
+from app.servicios.configuracion import metodo_costeo
 from app.servicios.errores import ErrorDeNegocio
 from app.servicios.permisos import exigir_permiso, puede_ver_costos
 
@@ -155,6 +157,43 @@ def _aplicar_delta(sesion: Session, producto_id: int, sucursal_id: int, delta: i
     return int(sesion.scalar(select(_EXISTENCIAS.c.cantidad).where(donde)))
 
 
+Segmentos = list[tuple[int, Decimal]]  # (unidades, costo unitario) tomadas de una o más capas
+
+
+def _consumir_capas(sesion: Session, producto: Producto, sucursal_id: int, cantidad: int) -> Segmentos:
+    """Descuenta ``cantidad`` de las capas más antiguas (PEPS) y devuelve lo consumido de cada una."""
+    pendiente = cantidad
+    segmentos: Segmentos = []
+    capas = sesion.scalars(
+        select(CapaCosto)
+        .where(
+            CapaCosto.producto_id == producto.id,
+            CapaCosto.sucursal_id == sucursal_id,
+            CapaCosto.cantidad_restante > 0,
+        )
+        .order_by(CapaCosto.id)
+    ).all()
+    for capa in capas:
+        if pendiente == 0:
+            break
+        toma = min(capa.cantidad_restante, pendiente)
+        capa.cantidad_restante -= toma
+        segmentos.append((toma, capa.costo_unitario))
+        pendiente -= toma
+    if pendiente > 0:
+        # No debería ocurrir (las capas siempre suman el stock). Si pasa, la venta no se bloquea: lo que
+        # falta se valora al costo promedio y ``verificar_capas`` (python main.py --salud) lo señala.
+        segmentos.append((pendiente, producto.costo_promedio))
+    return segmentos
+
+
+def _costo_de(segmentos: Segmentos) -> Decimal:
+    """Costo unitario promedio de lo consumido, al centavo."""
+    unidades = sum(c for c, _ in segmentos)
+    total = sum((Decimal(c) * k for c, k in segmentos), Decimal("0"))
+    return (total / Decimal(unidades)).quantize(CENTAVO, rounding=ROUND_HALF_UP)
+
+
 def aplicar_movimiento(
     sesion: Session,
     *,
@@ -167,12 +206,19 @@ def aplicar_movimiento(
     motivo: str | None = None,
     referencia_tipo: str | None = None,
     referencia_id: int | None = None,
+    capas: Segmentos | None = None,
 ) -> MovimientoInventario:
     """Registra un movimiento de kardex y actualiza la existencia, de forma atómica.
 
     NO comprueba permisos: la llaman otros servicios (compras, ventas, traslados)
     después de haber comprobado los suyos. ``cantidad`` es positiva, salvo en el
     tipo ``ajuste``, donde el signo indica si entra o sale.
+
+    También mantiene las capas de costo (siempre, sea cual sea el método): una entrada crea una capa
+    con su costo (o varias, si se indican ``capas``, como en un traslado) y una salida consume las más
+    antiguas. Con costeo PEPS, una salida sin ``costo_unitario`` se valora con el costo de las capas
+    consumidas; con promedio ponderado, al costo promedio del producto. El movimiento devuelto lleva
+    en ``segmentos_costo`` lo consumido o creado.
     """
     if tipo not in TIPOS:
         raise ErrorDeNegocio(f"Tipo de movimiento desconocido: {tipo}.")
@@ -189,13 +235,31 @@ def aplicar_movimiento(
     _sucursal(sesion, sucursal_id)
     saldo = _aplicar_delta(sesion, producto_id, sucursal_id, delta)
 
+    costo = producto.costo_promedio if costo_unitario is None else costo_unitario
+    if delta > 0:
+        cortes: Segmentos = list(capas) if capas else [(delta, costo)]
+        if sum(c for c, _ in cortes) != delta:
+            raise ErrorDeNegocio("Las capas de costo no suman la cantidad del movimiento.")
+        for unidades, costo_capa in cortes:
+            sesion.add(
+                CapaCosto(
+                    producto_id=producto_id, sucursal_id=sucursal_id, cantidad_inicial=unidades,
+                    cantidad_restante=unidades, costo_unitario=costo_capa, origen=tipo,
+                    referencia_tipo=referencia_tipo, referencia_id=referencia_id,
+                )
+            )
+    else:
+        cortes = _consumir_capas(sesion, producto, sucursal_id, -delta)
+        if costo_unitario is None and metodo_costeo(sesion) == "peps":
+            costo = _costo_de(cortes)
+
     movimiento = MovimientoInventario(
         producto_id=producto_id,
         sucursal_id=sucursal_id,
         tipo=tipo,
         cantidad=delta,
         saldo_despues=saldo,
-        costo_unitario=producto.costo_promedio if costo_unitario is None else costo_unitario,
+        costo_unitario=costo,
         motivo=motivo,
         referencia_tipo=referencia_tipo,
         referencia_id=referencia_id,
@@ -203,6 +267,7 @@ def aplicar_movimiento(
     )
     sesion.add(movimiento)
     sesion.flush()
+    movimiento.segmentos_costo = cortes  # no se guarda: lo usan traslados y ventas
     return movimiento
 
 
@@ -440,14 +505,18 @@ def trasladar(
         )
         sesion.add(traslado)
         sesion.flush()
-        for tipo, sucursal, texto in (
-            ("traslado_salida", origen, f"Traslado a {destino.nombre}"),
-            ("traslado_entrada", destino, f"Traslado desde {origen.nombre}"),
-        ):
-            aplicar_movimiento(
-                sesion, usuario_id=actor.id, producto_id=producto_id, sucursal_id=sucursal.id,
-                tipo=tipo, cantidad=cantidad, motivo=texto, referencia_tipo="traslado", referencia_id=traslado.id,
-            )
+        salida = aplicar_movimiento(
+            sesion, usuario_id=actor.id, producto_id=producto_id, sucursal_id=origen.id,
+            tipo="traslado_salida", cantidad=cantidad, motivo=f"Traslado a {destino.nombre}",
+            referencia_tipo="traslado", referencia_id=traslado.id,
+        )
+        # Las unidades llegan con las mismas capas (y costos) con las que salieron.
+        aplicar_movimiento(
+            sesion, usuario_id=actor.id, producto_id=producto_id, sucursal_id=destino.id,
+            tipo="traslado_entrada", cantidad=cantidad, motivo=f"Traslado desde {origen.nombre}",
+            referencia_tipo="traslado", referencia_id=traslado.id,
+            costo_unitario=salida.costo_unitario, capas=salida.segmentos_costo,
+        )
         registrar(
             sesion, "traslado_registrado", usuario_id=actor.id, entidad="traslados", entidad_id=traslado.id,
             detalle={"producto_id": producto_id, "cantidad": cantidad, "origen": origen.nombre, "destino": destino.nombre},
@@ -491,9 +560,25 @@ def _consultar_existencias(
     if solo_bajo_minimo:
         consulta = consulta.where(Producto.stock_minimo > 0, stock <= Producto.stock_minimo)
 
+    # Con PEPS el inventario se valora con lo que queda en las capas; con promedio, stock × costo promedio.
+    valores_capas: dict[int, Decimal] | None = None
+    if metodo_costeo(sesion) == "peps":
+        por_capas = select(
+            CapaCosto.producto_id, func.sum(CapaCosto.cantidad_restante * CapaCosto.costo_unitario)
+        ).where(CapaCosto.cantidad_restante > 0).group_by(CapaCosto.producto_id)
+        if sucursal_id is not None:
+            por_capas = por_capas.where(CapaCosto.sucursal_id == sucursal_id)
+        valores_capas = {i: Decimal(str(v)).quantize(CENTAVO, rounding=ROUND_HALF_UP) for i, v in sesion.execute(por_capas)}
+
     filas = []
     for producto, cantidad in sesion.execute(consulta).unique():
         cantidad = int(cantidad)
+        if valores_capas is None:
+            costo_fila = producto.costo_promedio
+            valor_fila = (Decimal(cantidad) * producto.costo_promedio).quantize(CENTAVO)
+        else:
+            valor_fila = valores_capas.get(producto.id, Decimal("0.00"))
+            costo_fila = (valor_fila / cantidad).quantize(CENTAVO, rounding=ROUND_HALF_UP) if cantidad > 0 else producto.costo_promedio
         filas.append(
             {
                 "producto_id": producto.id,
@@ -502,8 +587,8 @@ def _consultar_existencias(
                 "categoria": producto.categoria.nombre,
                 "stock": cantidad,
                 "stock_minimo": producto.stock_minimo,
-                "costo": producto.costo_promedio,
-                "valor": (Decimal(cantidad) * producto.costo_promedio).quantize(CENTAVO),
+                "costo": costo_fila,
+                "valor": valor_fila,
                 "bajo_minimo": producto.stock_minimo > 0 and cantidad <= producto.stock_minimo,
                 "activo": producto.activo,
             }
@@ -635,6 +720,64 @@ def verificar_consistencia(sesion: Session) -> list[dict]:
                 }
             )
     return diferencias
+
+
+def verificar_capas(sesion: Session) -> list[dict]:
+    """Compara, por producto y sucursal, lo que queda en las capas de costo con la existencia.
+
+    Devuelve las diferencias; vacía significa que las capas cuadran con el stock.
+    """
+    en_capas = {
+        (p, s): int(total)
+        for p, s, total in sesion.execute(
+            select(CapaCosto.producto_id, CapaCosto.sucursal_id, func.sum(CapaCosto.cantidad_restante)).group_by(
+                CapaCosto.producto_id, CapaCosto.sucursal_id
+            )
+        )
+    }
+    actuales = {
+        (p, s): int(c)
+        for p, s, c in sesion.execute(select(Existencia.producto_id, Existencia.sucursal_id, Existencia.cantidad))
+    }
+    diferencias = []
+    for clave in sorted(set(en_capas) | set(actuales)):
+        if en_capas.get(clave, 0) != actuales.get(clave, 0):
+            diferencias.append(
+                {
+                    "producto_id": clave[0],
+                    "sucursal_id": clave[1],
+                    "en_capas": en_capas.get(clave, 0),
+                    "existencia": actuales.get(clave, 0),
+                }
+            )
+    return diferencias
+
+
+def capas_de_producto(sesion: Session, actor: Usuario, producto_id: int, sucursal_id: int | None = None) -> list[dict]:
+    """Capas con unidades restantes, de la más antigua a la más nueva (el orden en que se consumen con PEPS)."""
+    exigir_permiso(sesion, actor, "inventario", "ver")
+    ver_costos = puede_ver_costos(sesion, actor)
+    consulta = (
+        select(CapaCosto, Sucursal.nombre)
+        .join(Sucursal, Sucursal.id == CapaCosto.sucursal_id)
+        .where(CapaCosto.producto_id == producto_id, CapaCosto.cantidad_restante > 0)
+        .order_by(CapaCosto.id)
+    )
+    if sucursal_id is not None:
+        consulta = consulta.where(CapaCosto.sucursal_id == sucursal_id)
+    return [
+        {
+            "id": c.id,
+            "sucursal": nombre,
+            "fecha": c.creada_en,
+            "origen": c.origen,
+            "cantidad_inicial": c.cantidad_inicial,
+            "restante": c.cantidad_restante,
+            "costo": c.costo_unitario if ver_costos else None,
+            "valor": (Decimal(c.cantidad_restante) * c.costo_unitario).quantize(CENTAVO) if ver_costos else None,
+        }
+        for c, nombre in sesion.execute(consulta)
+    ]
 
 
 # ---- exportación ---------------------------------------------------------------------

@@ -367,18 +367,20 @@ def registrar_venta(
                     costo = producto.costo_promedio
                     if not producto.es_servicio:  # un servicio no descuenta existencias
                         try:
-                            aplicar_movimiento(
+                            # Sin costo explícito: el inventario valora la salida según el método de costeo
+                            # (promedio ponderado o PEPS) y ese costo es el que se congela en la venta.
+                            movimiento = aplicar_movimiento(
                                 sesion,
                                 usuario_id=actor.id,
                                 producto_id=producto.id,
                                 sucursal_id=sucursal_id,
                                 tipo="salida",
                                 cantidad=cantidad,
-                                costo_unitario=costo,
                                 motivo=f"Venta {formatear_numero(venta.numero)}",
                                 referencia_tipo="venta",
                                 referencia_id=venta.id,
                             )
+                            costo = movimiento.costo_unitario
                         except ErrorDeNegocio as error:
                             raise ErrorDeNegocio(f"{producto.sku} · {producto.nombre}: {error}") from None
                     sesion.add(

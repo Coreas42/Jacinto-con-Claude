@@ -6,6 +6,8 @@ Importar aquí cada módulo de modelos nuevo para que Alembic los detecte.
 from app.modelos.base_sistema import Configuracion, Sucursal  # noqa: F401
 from app.modelos.catalogo import Categoria, HistorialProducto, Producto  # noqa: F401
 from app.modelos.inventario import (  # noqa: F401
+    CapaCosto,
+    CapaCosto,
     Compra,
     CompraDetalle,
     Existencia,

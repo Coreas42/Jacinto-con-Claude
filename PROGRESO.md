@@ -22,7 +22,7 @@
 - Un usuario no puede cambiar su propio rol, desactivarse ni editar sus propios permisos (evita quedarse sin administrador).
 - Ventas: `ventas.ver` = solo las propias; `ventas.ver_todas` = las de todos los vendedores (contador y administrador). Reportes (Fase 5) seguirán la misma idea.
 
-## Esquema activo (migraciones `0001` a `0007`)
+## Esquema activo (migraciones `0001` a `0010`)
 
 - `sucursales`, `configuracion`
 - `roles`, `permisos` (módulo + acción, único), `roles_permisos`
@@ -157,6 +157,16 @@ Eventos auditados: `login`, `login_fallido`, `logout`, `usuario_creado`, `rol_ca
 - **No se pudo construir ni probar el .exe en la sesión** (el entorno no es Windows y PyPI está bloqueado): la primera corrida del flujo «Instalador» puede necesitar ajustes (módulos que PyInstaller no detecte, etc.). El instalador no está firmado: Windows SmartScreen avisará.
 - Pendiente consciente: sin icono propio (`--icon`), sin actualización automática ni firma de código.
 
+## Costeo PEPS configurable (Fase 7d)
+
+- **Capas de costo** (`capas_costo`, migración `0010`): cada compra, devolución, anulación o ajuste positivo crea una capa (cantidad inicial/restante, costo unitario, origen). Se mantienen **siempre**, sea cual sea el método, para poder cambiar de método sin perder historia. La migración siembra una capa «inicial» por cada existencia actual al costo promedio vigente.
+- **Método** (`configuracion.metodo_costeo`: `promedio` por defecto o `peps`, pantalla Configuración → «Costeo del inventario»). Solo cambia (1) con qué costo sale una venta/merma/ajuste negativo y (2) cómo se valora el inventario. Con PEPS se consumen las capas más antiguas primero; el costo de la línea es el promedio ponderado (redondeado a centavos) de las capas consumidas. Las ventas anteriores conservan su costo congelado.
+- `aplicar_movimiento` consume/crea capas; `trasladar` mueve las capas con su costo al destino; anular/devolver regresa las unidades al costo congelado de la venta.
+- Tolerancia: si faltan capas (datos manipulados) la salida usa el costo promedio del producto en lugar de bloquear la venta; `verificar_capas` y `python main.py --salud` reportan la diferencia.
+- UI: botón «Capas» junto a «Kardex» en Inventario (el cajero no ve costos).
+- Pendiente consciente: el costo por línea se redondea a centavos por unidad (la suma de líneas puede diferir centavos del costo exacto de las capas).
+- `tests/test_fase7d.py` (17 pruebas). **No se pudo ejecutar en la sesión** (PyPI bloqueado): correr «Pruebas» sobre `fase-7d-peps`.
+
 ## Dependencias
 
 SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-dotenv 1.0.1, argon2-cffi 23.1.0, pytest 8.3.4.
@@ -191,7 +201,10 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-do
 | 5.5 | Interfaz: tema oscuro morado, inicio con indicadores y gráfica, clientes, proveedores y gastos | Unida a `main` (PR #6) |
 | 6a | Servicios sin stock (polarizado, instalación, car wash) | Unida a `main` (PR #8) |
 | 6b | Costos ocultos al cajero, bloqueo de acceso, respaldos, salud con inventario, paginación | Unida a `main` |
-| 6c | Dockerfile, README completo, guía de GitHub, `SEMBRAR_EJEMPLOS` | Código subido a rama |
+| 6c | Dockerfile, README completo, guía de GitHub, `SEMBRAR_EJEMPLOS` | Unida a `main` |
+| 7a–7c, 7f | Configuración, inactividad, fotos, pagos mixtos, devoluciones, instalador | Unidas a `main` |
+| 7d | Costeo PEPS configurable | Código en rama `fase-7d-peps` |
+| 7e | Respaldos cifrados opcionales | Pendiente |
 
 ## Documentación (Fase 6c)
 
@@ -201,4 +214,4 @@ SQLAlchemy 2.0.36, alembic 1.14.0, customtkinter 5.2.2, Pillow 11.0.0, python-do
 
 ## Siguiente paso
 
-Probar la fase 7f (Actions: «Pruebas» y luego «Instalador»; ajustar lo que falle en la primera construcción). Después: 7d (costeo PEPS configurable) y 7e (respaldos cifrados opcionales). La mejora de interfaz (colores, tamaños, caja con catálogo y fotos, atajos de teclado, modo claro/oscuro) queda pendiente sin fecha.
+Probar la fase 7d (Actions «Pruebas» sobre `fase-7d-peps`; luego probar PEPS en Configuración). Después: 7e (respaldos cifrados opcionales). La mejora de interfaz (colores, tamaños, caja con catálogo y fotos, atajos de teclado, modo claro/oscuro) queda pendiente sin fecha.

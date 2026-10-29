@@ -36,6 +36,7 @@ def verificar_salud(motor: Engine, revisar_inventario: bool = False) -> dict:
     }
     if revisar_inventario:
         resultado["diferencias_de_inventario"] = None
+        resultado["diferencias_de_capas"] = None
     try:
         with motor.connect() as conexion:
             conexion.execute(text("SELECT 1"))
@@ -59,11 +60,19 @@ def verificar_salud(motor: Engine, revisar_inventario: bool = False) -> dict:
     if revisar_inventario:
         from sqlalchemy.orm import Session
 
-        from app.servicios.inventario import verificar_consistencia
+        from app.servicios.inventario import verificar_capas, verificar_consistencia
 
         with Session(motor) as sesion:
             diferencias = verificar_consistencia(sesion)
+            diferencias_capas = verificar_capas(sesion)
         resultado["diferencias_de_inventario"] = len(diferencias)
+        resultado["diferencias_de_capas"] = len(diferencias_capas)
+        if diferencias_capas and not diferencias:
+            resultado["detalle"] = (
+                f"Las capas de costo no cuadran con el stock en {len(diferencias_capas)} caso(s). "
+                "El costeo PEPS puede dar costos inexactos hasta revisarlo."
+            )
+            return resultado
         if diferencias:
             resultado["detalle"] = (
                 f"El inventario no cuadra con el kardex en {len(diferencias)} caso(s). "

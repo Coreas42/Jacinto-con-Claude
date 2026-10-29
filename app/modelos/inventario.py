@@ -64,6 +64,31 @@ class MovimientoInventario(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class CapaCosto(Base):
+    """Lote de costo (capa PEPS): unidades que entraron a un mismo costo y aún no se han consumido.
+
+    Se mantiene SIEMPRE, sin importar el método de costeo elegido, así cambiar de método es inmediato.
+    Las salidas consumen primero la capa más antigua. La suma de ``cantidad_restante`` de un producto en
+    una sucursal debe ser igual a su existencia (``verificar_consistencia`` lo comprueba).
+    """
+
+    __tablename__ = "capas_costo"
+    __table_args__ = (
+        CheckConstraint("cantidad_restante >= 0", name="restante_no_negativo"),
+        CheckConstraint("cantidad_restante <= cantidad_inicial", name="restante_no_mayor_que_inicial"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id"), index=True)
+    sucursal_id: Mapped[int] = mapped_column(ForeignKey("sucursales.id"))
+    cantidad_inicial: Mapped[int]
+    cantidad_restante: Mapped[int]
+    costo_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    creada_en: Mapped[datetime] = mapped_column(DateTime)  # define el orden de consumo
+    origen_tipo: Mapped[str | None] = mapped_column(String(30))
+    origen_id: Mapped[int | None] = mapped_column()
+
+
 class Compra(Base):
     __tablename__ = "compras"
 
@@ -101,3 +126,29 @@ class Traslado(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
     nota: Mapped[str | None] = mapped_column(String(200))
     creado_en: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CapaCosto(Base):
+    """Lote de unidades con su costo de entrada (para costear por PEPS).
+
+    Cada entrada de stock (compra, ajuste positivo, devolución, traslado recibido) crea una capa;
+    cada salida consume las capas más antiguas primero. Se mantienen siempre, sea cual sea el
+    método de costeo elegido, para poder cambiar de método sin perder información.
+    """
+
+    __tablename__ = "capas_costo"
+    __table_args__ = (
+        CheckConstraint("cantidad_inicial > 0", name="cantidad_inicial_positiva"),
+        CheckConstraint("cantidad_restante >= 0", name="cantidad_restante_no_negativa"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    producto_id: Mapped[int] = mapped_column(ForeignKey("productos.id"), index=True)
+    sucursal_id: Mapped[int] = mapped_column(ForeignKey("sucursales.id"))
+    cantidad_inicial: Mapped[int]
+    cantidad_restante: Mapped[int]
+    costo_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    origen: Mapped[str] = mapped_column(String(20))  # inicial, entrada, ajuste, devolucion, anulacion, traslado_entrada
+    referencia_tipo: Mapped[str | None] = mapped_column(String(20))
+    referencia_id: Mapped[int | None]
+    creada_en: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

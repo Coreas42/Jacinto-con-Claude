@@ -11,6 +11,12 @@ from app.ui import tema
 from app.ui.comun import PantallaBase
 
 
+ETIQUETAS_COSTEO = {
+    "promedio": "Promedio ponderado",
+    "peps": "PEPS (primero en entrar, primero en salir)",
+}
+
+
 class PantallaConfiguracion(PantallaBase):
     def __init__(self, master: Any, app: Any) -> None:
         super().__init__(master, app, "Configuración")
@@ -35,6 +41,20 @@ class PantallaConfiguracion(PantallaBase):
             f"De 0 a {MAXIMO_INACTIVIDAD}. Con 0 la sesión nunca se cierra sola. Una venta sin cobrar se pierde al cerrar.",
             valores["inactividad_minutos"],
         )
+        costeo = tema.Tarjeta(self, "Costeo del inventario")
+        costeo.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(costeo, text="Método de costeo", anchor="w", font=tema.fuente(13, True)).pack(fill="x", padx=12, pady=(4, 0))
+        self.metodo = ctk.CTkOptionMenu(costeo, values=list(ETIQUETAS_COSTEO.values()), width=420)
+        self.metodo.set(ETIQUETAS_COSTEO[valores["metodo_costeo"]])
+        if not self.puede_editar:
+            self.metodo.configure(state="disabled")
+        self.metodo.pack(anchor="w", padx=12)
+        ctk.CTkLabel(
+            costeo, anchor="w", justify="left", wraplength=640, text_color=tema.TEXTO_SUAVE, font=tema.fuente(11),
+            text="Define con qué costo se calcula la ganancia de cada venta. Promedio ponderado: el costo medio de todo lo "
+            "comprado. PEPS: se vende primero lo que entró primero, con el costo de esa compra. El cambio aplica a las "
+            "ventas nuevas; las anteriores conservan su costo.",
+        ).pack(fill="x", padx=12, pady=(0, 8))
         if self.puede_editar:
             ctk.CTkButton(self, text="Guardar cambios", command=self.guardar).pack(anchor="w", pady=14)
         else:
@@ -52,6 +72,7 @@ class PantallaConfiguracion(PantallaBase):
 
     def guardar(self) -> None:
         cambios = {clave: campo.get() for clave, campo in self.campos.items()}
+        cambios["metodo_costeo"] = next(k for k, etiqueta in ETIQUETAS_COSTEO.items() if etiqueta == self.metodo.get())
         ok, _ = self.ejecutar(lambda s, a: guardar_configuracion(s, a, cambios))
         if ok:
             self.app.aplicar_configuracion()
